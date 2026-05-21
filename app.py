@@ -70,9 +70,9 @@ def inject_css():
         <style>
         @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700;900&display=swap');
         :root {
-          --bg:#0f1117; --bg2:#1a1d27; --bg3:#242836;
-          --accent:#4ecdc4; --gold:#f7c948; --text:#e8eaed; --text2:#9ca3af;
-          --border:#2d3344; --radius:12px;
+          --bg:#f8fafc; --bg2:#ffffff; --bg3:#f1f5f9;
+          --accent:#0f766e; --gold:#ca8a04; --text:#0f172a; --text2:#64748b;
+          --border:#dbe3ee; --radius:12px;
         }
         html, body, [class*="css"], .stApp {
           font-family:'Noto Sans KR',sans-serif;
@@ -118,8 +118,8 @@ def inject_css():
         .asset-community{background:rgba(244,114,182,.15);color:#f472b6}
         .map-shell {position:relative;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--bg2);}
         .legend, .pgis-panel, .stats-bar {
-          background:rgba(26,29,39,.96);border:1px solid var(--border);border-radius:var(--radius);
-          box-shadow:0 8px 32px rgba(0,0,0,.25);
+          background:rgba(255,255,255,.96);border:1px solid var(--border);border-radius:var(--radius);
+          box-shadow:0 8px 28px rgba(15,23,42,.10);
         }
         .legend {padding:16px;}
         .legend h4 {font-size:12px;font-weight:600;margin:0 0 10px;color:var(--accent);}
@@ -142,15 +142,15 @@ def inject_css():
         .info-box {background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;text-align:center;}
         .info-box .val {font-size:18px;font-weight:700;color:var(--accent);}
         .info-box .lbl {font-size:10px;color:var(--text2);margin-top:4px;}
-        .leaflet-container {background:#0f1117 !important;}
-        .leaflet-popup-content-wrapper {background:#1a1d27 !important;color:#e8eaed !important;border:1px solid #2d3344 !important;border-radius:12px !important;}
-        .leaflet-popup-tip {background:#1a1d27 !important;}
+        .leaflet-container {background:#f4f4f0 !important;}
+        .leaflet-popup-content-wrapper {background:#ffffff !important;color:#0f172a !important;border:1px solid #dbe3ee !important;border-radius:12px !important;}
+        .leaflet-popup-tip {background:#ffffff !important;}
         .stButton > button, .stDownloadButton > button {
           border-radius:8px;border:1px solid var(--border);background:var(--bg3);color:var(--text);
           font-family:'Noto Sans KR',sans-serif;
         }
         .stButton > button:hover {border-color:var(--accent);color:var(--accent);}
-        .primary-action > button, button[kind="primary"] {background:var(--accent)!important;color:var(--bg)!important;border-color:var(--accent)!important;}
+        .primary-action > button, button[kind="primary"] {background:var(--accent)!important;color:#ffffff!important;border-color:var(--accent)!important;}
         input, textarea, select {background:var(--bg3)!important;color:var(--text)!important;border-color:var(--border)!important;}
         </style>
         """,
@@ -213,8 +213,8 @@ def popup_html(asset):
     return f"""
     <div style="min-width:180px">
       <div style="font-size:14px;font-weight:600;margin-bottom:4px">{asset_type['icon']} {esc(asset['name'])}</div>
-      <div style="font-size:11px;color:#9ca3af;margin-bottom:8px">{esc(asset['zone'])}</div>
-      <div style="font-size:12px;line-height:1.6;color:#e8eaed">{esc(asset['desc'][:80])}...</div>
+      <div style="font-size:11px;color:#64748b;margin-bottom:8px">{esc(asset['zone'])}</div>
+      <div style="font-size:12px;line-height:1.6;color:#0f172a">{esc(asset['desc'][:80])}...</div>
       <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap">{tags}</div>
     </div>
     """
@@ -238,10 +238,10 @@ def make_map(filtered_assets, active_route):
         control_scale=True,
     )
     folium.TileLayer(
-        tiles="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+        tiles="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
         attr="&copy; CARTO",
         max_zoom=19,
-        name="Dark Matter",
+        name="CartoDB Positron",
     ).add_to(fmap)
     plugins.Fullscreen(position="topright").add_to(fmap)
     plugins.MiniMap(toggle_display=True, position="bottomleft").add_to(fmap)
