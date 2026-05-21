@@ -8,18 +8,18 @@ from streamlit_folium import st_folium
 
 st.set_page_config(
     page_title="남산 PGIS — 주민참여형 공간정보시스템",
-    page_icon="📍",
+    page_icon="N",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 ASSET_TYPES = [
-    {"id": "history", "label": "역사 자산", "icon": "🏛️", "color": "#fb923c", "bg": "rgba(251,146,60,0.15)"},
-    {"id": "life", "label": "생활 자산", "icon": "🏘️", "color": "#4ecdc4", "bg": "rgba(78,205,196,0.15)"},
-    {"id": "culture", "label": "문화 자산", "icon": "🎭", "color": "#a78bfa", "bg": "rgba(167,139,250,0.15)"},
-    {"id": "ecology", "label": "생태 자산", "icon": "🌿", "color": "#34d399", "bg": "rgba(52,211,153,0.15)"},
-    {"id": "landscape", "label": "경관 자산", "icon": "🌄", "color": "#4a9eff", "bg": "rgba(74,158,255,0.15)"},
-    {"id": "community", "label": "공동체 자산", "icon": "🤝", "color": "#f472b6", "bg": "rgba(244,114,182,0.15)"},
+    {"id": "history", "label": "역사 자산", "icon": "史", "color": "#fb923c", "bg": "rgba(251,146,60,0.15)"},
+    {"id": "life", "label": "생활 자산", "icon": "生", "color": "#4ecdc4", "bg": "rgba(78,205,196,0.15)"},
+    {"id": "culture", "label": "문화 자산", "icon": "文", "color": "#a78bfa", "bg": "rgba(167,139,250,0.15)"},
+    {"id": "ecology", "label": "생태 자산", "icon": "森", "color": "#34d399", "bg": "rgba(52,211,153,0.15)"},
+    {"id": "landscape", "label": "경관 자산", "icon": "景", "color": "#4a9eff", "bg": "rgba(74,158,255,0.15)"},
+    {"id": "community", "label": "공동체 자산", "icon": "共", "color": "#f472b6", "bg": "rgba(244,114,182,0.15)"},
 ]
 
 ASSETS = [
@@ -44,11 +44,11 @@ ASSETS = [
 ]
 
 ROUTES = [
-    {"id": "r1", "name": "남산 생활기억길", "color": "#4ecdc4", "icon": "🏘️", "distance": "3.2km", "duration": "1.5시간", "difficulty": "보통", "desc": "후암동·회현동 일대 주민 생활골목과 계단길을 잇는 루트. 오래된 가게, 골목 풍경, 주민의 장소 기억을 따라 걷습니다.", "points": [2, 6, 18, 7], "zones": ["후암동", "회현동"]},
-    {"id": "r2", "name": "남산 역사문화길", "color": "#fb923c", "icon": "🏛️", "distance": "4.1km", "duration": "2시간", "difficulty": "보통", "desc": "한양도성부터 근현대 역사 자원까지, 남산의 시간 층위를 체험하는 역사 탐방 루트입니다.", "points": [1, 10, 15, 8, 3], "zones": ["예장동", "장충동"]},
-    {"id": "r3", "name": "남산 조망길", "color": "#4a9eff", "icon": "🌄", "distance": "3.8km", "duration": "2시간", "difficulty": "어려움", "desc": "서울의 스카이라인과 야경을 감상할 수 있는 조망 포인트를 연결하는 전망 루트입니다.", "points": [5, 16, 13], "zones": ["남산 정상부", "이태원동"]},
-    {"id": "r4", "name": "남산 생태길", "color": "#34d399", "icon": "🌿", "distance": "2.8km", "duration": "1.5시간", "difficulty": "쉬움", "desc": "남산의 숲길과 녹지축을 따라 도시생태를 관찰하고 체험하는 자연 탐방 루트입니다.", "points": [4, 12, 17], "zones": ["남산 정상부", "예장동", "장충동"]},
-    {"id": "r5", "name": "남산 공동체길", "color": "#f472b6", "icon": "🤝", "distance": "2.5km", "duration": "1시간", "difficulty": "쉬움", "desc": "주민 커뮤니티 공간과 마을 활동 거점을 연결하여 세대·문화 간 교류를 촉진하는 루트입니다.", "points": [11, 7, 6], "zones": ["회현동", "후암동"]},
+    {"id": "r1", "name": "남산 생활기억길", "color": "#4ecdc4", "icon": "生", "distance": "3.2km", "duration": "1.5시간", "difficulty": "보통", "desc": "후암동·회현동 일대 주민 생활골목과 계단길을 잇는 루트. 오래된 가게, 골목 풍경, 주민의 장소 기억을 따라 걷습니다.", "points": [2, 6, 18, 7], "zones": ["후암동", "회현동"]},
+    {"id": "r2", "name": "남산 역사문화길", "color": "#fb923c", "icon": "史", "distance": "4.1km", "duration": "2시간", "difficulty": "보통", "desc": "한양도성부터 근현대 역사 자원까지, 남산의 시간 층위를 체험하는 역사 탐방 루트입니다.", "points": [1, 10, 15, 8, 3], "zones": ["예장동", "장충동"]},
+    {"id": "r3", "name": "남산 조망길", "color": "#4a9eff", "icon": "景", "distance": "3.8km", "duration": "2시간", "difficulty": "어려움", "desc": "서울의 스카이라인과 야경을 감상할 수 있는 조망 포인트를 연결하는 전망 루트입니다.", "points": [5, 16, 13], "zones": ["남산 정상부", "이태원동"]},
+    {"id": "r4", "name": "남산 생태길", "color": "#34d399", "icon": "森", "distance": "2.8km", "duration": "1.5시간", "difficulty": "쉬움", "desc": "남산의 숲길과 녹지축을 따라 도시생태를 관찰하고 체험하는 자연 탐방 루트입니다.", "points": [4, 12, 17], "zones": ["남산 정상부", "예장동", "장충동"]},
+    {"id": "r5", "name": "남산 공동체길", "color": "#f472b6", "icon": "共", "distance": "2.5km", "duration": "1시간", "difficulty": "쉬움", "desc": "주민 커뮤니티 공간과 마을 활동 거점을 연결하여 세대·문화 간 교류를 촉진하는 루트입니다.", "points": [11, 7, 6], "zones": ["회현동", "후암동"]},
 ]
 
 ZONES = [
@@ -98,7 +98,7 @@ def inject_css():
         }
         .card:hover {border-color:var(--accent);transform:translateY(-1px);}
         .card-header {display:flex;align-items:center;gap:10px;margin-bottom:8px;}
-        .card-icon {width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;}
+        .card-icon {width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;line-height:1;flex-shrink:0;}
         .card-title {font-size:14px;font-weight:600;color:var(--text);}
         .card-sub {font-size:11px;color:var(--text2);}
         .card-desc {font-size:12px;color:var(--text2);line-height:1.6;}
@@ -134,6 +134,7 @@ def inject_css():
         .dot {width:8px;height:8px;background:#34d399;border-radius:50%;display:inline-block;animation:pulse 2s infinite;}
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
         .type-badge {display:inline-block;padding:4px 12px;border-radius:20px;font-size:11px;margin-bottom:10px;}
+        .detail-symbol {width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;line-height:1;margin-bottom:12px;}
         .detail-box {background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px;height:100%;}
         .detail-box h2 {font-size:20px;font-weight:700;margin:0 0 8px;}
         .detail-box p {font-size:13px;color:var(--text2);line-height:1.8;}
@@ -183,13 +184,13 @@ def render_route_card(route, active):
     <div class="card route-card" style="{border}">
       <div class="route-line" style="background:{route['color']}"></div>
       <div class="card-header">
-        <div style="font-size:20px">{route['icon']}</div>
+        <div class="card-icon" style="background:{route['color']}22;color:{route['color']}">{route['icon']}</div>
         <div><div class="card-title">{esc(route['name'])}</div><div class="card-sub" style="color:{route['color']}">{esc(' → '.join(route['zones']))}</div></div>
       </div>
       <div class="card-desc">{esc(route['desc'])}</div>
       <div class="route-meta">
-        <span>📏 {esc(route['distance'])}</span><span>⏱️ {esc(route['duration'])}</span>
-        <span>📊 {esc(route['difficulty'])}</span><span>📍 {len(route['points'])}개 거점</span>
+        <span>거리 {esc(route['distance'])}</span><span>시간 {esc(route['duration'])}</span>
+        <span>난이도 {esc(route['difficulty'])}</span><span>거점 {len(route['points'])}개</span>
       </div>
     </div>
     """
@@ -200,7 +201,7 @@ def marker_html(asset):
     return f"""
     <div style="width:32px;height:32px;border-radius:50%;background:{asset_type['bg']};
     border:2px solid {asset_type['color']};display:flex;align-items:center;justify-content:center;
-    font-size:16px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3)">{asset_type['icon']}</div>
+    font-size:13px;font-weight:800;line-height:1;cursor:pointer;box-shadow:0 2px 8px rgba(15,23,42,.18)">{asset_type['icon']}</div>
     """
 
 
@@ -287,10 +288,10 @@ def render_detail(asset):
     st.markdown(
         f"""
         <div class="detail-box">
-          <div style="font-size:40px;margin-bottom:12px">{asset_type['icon']}</div>
+          <div class="detail-symbol asset-{asset['type']}">{asset_type['icon']}</div>
           <h2>{esc(asset['name'])}</h2>
           <div class="type-badge" style="background:{asset_type['bg']};color:{asset_type['color']}">{esc(asset_type['label'])}</div>
-          <div style="font-size:12px;color:var(--text2);margin-bottom:16px">📍 {esc(asset['zone'])} · {asset['lat']:.4f}, {asset['lng']:.4f}</div>
+          <div style="font-size:12px;color:var(--text2);margin-bottom:16px">위치 {esc(asset['zone'])} · {asset['lat']:.4f}, {asset['lng']:.4f}</div>
           <p>{esc(asset['desc'])}</p>
           <div style="margin:18px 0 8px;color:var(--accent);font-size:14px;font-weight:600">태그</div>
           <div class="card-tags">{tags}</div>
@@ -341,7 +342,7 @@ def render_pgis_tab():
         unsafe_allow_html=True,
     )
     with st.form("pgis_form", clear_on_submit=True):
-        st.subheader("📍 새 장소 등록")
+        st.subheader("새 장소 등록")
         name = st.text_input("장소 이름 *", placeholder="예: 후암동 옛 우물터")
         asset_type = st.selectbox("자산 유형 *", ASSET_TYPES, format_func=lambda item: f"{item['icon']} {item['label']}")
         zone = st.selectbox("권역 *", ZONES, format_func=lambda item: item["name"])
@@ -365,14 +366,14 @@ def render_pgis_tab():
 
     st.markdown("#### 참여 방법 안내")
     for item in [
-        ("📱", "모바일 장소 등록", "스마트폰으로 위치를 태깅하고 사진·설명을 기록합니다"),
-        ("🗣️", "참여형 워크숍", "대형 지도 위에 포스트잇·스티커로 장소를 표시합니다"),
-        ("🚶", "보행 조사", "주민과 함께 걸으며 현장에서 직접 장소를 기록합니다"),
-        ("🎙️", "구술 기록", "고령 주민의 장소 기억과 이야기를 녹음·정리합니다"),
-        ("📸", "사진 조사 (Photovoice)", "주민이 촬영한 사진에 위치·의미를 부여합니다"),
+        ("01", "모바일 장소 등록", "스마트폰으로 위치를 태깅하고 사진·설명을 기록합니다"),
+        ("02", "참여형 워크숍", "대형 지도 위에 포스트잇·스티커로 장소를 표시합니다"),
+        ("03", "보행 조사", "주민과 함께 걸으며 현장에서 직접 장소를 기록합니다"),
+        ("04", "구술 기록", "고령 주민의 장소 기억과 이야기를 녹음·정리합니다"),
+        ("05", "사진 조사 (Photovoice)", "주민이 촬영한 사진에 위치·의미를 부여합니다"),
     ]:
         st.markdown(
-            f"""<div class="card"><div class="card-header"><div style="font-size:20px">{item[0]}</div>
+            f"""<div class="card"><div class="card-header"><div class="card-icon" style="background:rgba(15,118,110,.10);color:var(--accent);font-size:11px">{item[0]}</div>
             <div><div class="card-title">{esc(item[1])}</div></div></div><div class="card-desc">{esc(item[2])}</div></div>""",
             unsafe_allow_html=True,
         )
@@ -386,7 +387,7 @@ def render_pgis_tab():
 
 
 def render_about_tab():
-    st.markdown("### 📋 사업 개요")
+    st.markdown("### 사업 개요")
     st.markdown(
         '<div class="about-text">남산 일대의 역사·문화·생활·생태·경관 자산을 주민과 이용자가 직접 발굴·지도화하여, 지역 고유성을 반영한 지속가능한 보행·문화 네트워크를 구축하는 프로젝트입니다.</div>',
         unsafe_allow_html=True,
@@ -402,7 +403,7 @@ def render_about_tab():
         """,
         unsafe_allow_html=True,
     )
-    st.markdown("### 📍 대상 권역")
+    st.markdown("### 대상 권역")
     for zone in ZONES:
         st.markdown(
             f"""<div class="card"><div class="card-header">
@@ -411,13 +412,13 @@ def render_about_tab():
             </div></div>""",
             unsafe_allow_html=True,
         )
-    st.markdown("### 🔬 GIS 분석 체계")
+    st.markdown("### GIS 분석 체계")
     for value in ["경사도 분석 — 보행 편의성 평가", "네트워크 분석 — 연결성 평가", "가시권 분석 — 조망자원 평가", "접근성 분석 — 보행 접근성 평가", "밀도 분석 — 자산 집중지역 도출", "위험도 분석 — 안전성 평가"]:
         st.markdown(
             f'<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border);font-size:12px"><span style="color:var(--accent)">◆</span> {esc(value)}</div>',
             unsafe_allow_html=True,
         )
-    st.markdown("### 📅 추진 로드맵 (12개월)")
+    st.markdown("### 추진 로드맵 (12개월)")
     for idx, value in enumerate(["1~2개월: 기초 GIS 구축", "2~3개월: 주민 워크숍", "3~5개월: PGIS 장소 수집", "4~6개월: 현장조사", "5~7개월: 공간분석", "7~9개월: 길 네트워크 설계", "9~11개월: 시범구간 운영", "11~12개월: 통합 플랫폼 구축"], start=1):
         st.markdown(
             f'<div style="display:flex;align-items:center;gap:8px;padding:6px 0;font-size:12px;color:var(--text2)"><span style="color:var(--accent);font-weight:700;font-size:11px;min-width:20px">{idx}</span> {esc(value)}</div>',
@@ -431,10 +432,10 @@ def render_sidebar(filtered_assets):
         st.markdown('<div class="subtitle">주민참여형 공간정보시스템 · 남산 길만들기</div>', unsafe_allow_html=True)
 
         tabs = {
-            "🗺️ 자산지도": "assets",
-            "🚶 길 네트워크": "routes",
-            "📍 PGIS 참여": "pgis",
-            "ℹ️ 사업소개": "about",
+            "자산지도": "assets",
+            "길 네트워크": "routes",
+            "PGIS 참여": "pgis",
+            "사업소개": "about",
         }
         label = st.radio("메뉴", list(tabs.keys()), label_visibility="collapsed")
         st.session_state.active_tab = tabs[label]
