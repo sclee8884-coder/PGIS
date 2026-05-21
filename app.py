@@ -142,7 +142,7 @@ def inject_css():
         .info-box {background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;text-align:center;}
         .info-box .val {font-size:18px;font-weight:700;color:var(--accent);}
         .info-box .lbl {font-size:10px;color:var(--text2);margin-top:4px;}
-        .leaflet-container {background:#0f1117 !important;}
+        .leaflet-container {background:#f4f4f0 !important;}
         .leaflet-popup-content-wrapper {background:#1a1d27 !important;color:#e8eaed !important;border:1px solid #2d3344 !important;border-radius:12px !important;}
         .leaflet-popup-tip {background:#1a1d27 !important;}
         .stButton > button, .stDownloadButton > button {
@@ -238,10 +238,10 @@ def make_map(filtered_assets, active_route):
         control_scale=True,
     )
     folium.TileLayer(
-        tiles="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+        tiles="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
         attr="&copy; CARTO",
         max_zoom=19,
-        name="Dark Matter",
+        name="CartoDB Positron",
     ).add_to(fmap)
     plugins.Fullscreen(position="topright").add_to(fmap)
     plugins.MiniMap(toggle_display=True, position="bottomleft").add_to(fmap)
