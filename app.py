@@ -51,6 +51,35 @@ ROUTES = [
     {"id": "r5", "name": "남산 공동체길", "color": "#f472b6", "icon": "共", "distance": "2.5km", "duration": "1시간", "difficulty": "쉬움", "desc": "주민 커뮤니티 공간과 마을 활동 거점을 연결하여 세대·문화 간 교류를 촉진하는 루트입니다.", "points": [11, 7, 6], "zones": ["회현동", "후암동"]},
 ]
 
+ROUTE_PATHS = {
+    "r1": [
+        [37.5445, 126.9785], [37.5438, 126.9792], [37.5432, 126.9810],
+        [37.5450, 126.9820], [37.5480, 126.9815], [37.5520, 126.9804],
+        [37.5560, 126.9794], [37.5585, 126.9790], [37.5592, 126.9773],
+    ],
+    "r2": [
+        [37.5512, 126.9882], [37.5505, 126.9870], [37.5514, 126.9888],
+        [37.5535, 126.9903], [37.5560, 126.9913], [37.5580, 126.9920],
+        [37.5588, 126.9935], [37.5590, 126.9942], [37.5586, 126.9965],
+        [37.5580, 126.9992], [37.5575, 127.0015],
+    ],
+    "r3": [
+        [37.5512, 126.9882], [37.5506, 126.9905], [37.5490, 126.9930],
+        [37.5473, 126.9938], [37.5454, 126.9940], [37.5432, 126.9932],
+        [37.5405, 126.9920],
+    ],
+    "r4": [
+        [37.5505, 126.9880], [37.5520, 126.9885], [37.5542, 126.9890],
+        [37.5565, 126.9905], [37.5571, 126.9930], [37.5574, 126.9960],
+        [37.5580, 127.0000],
+    ],
+    "r5": [
+        [37.5555, 126.9755], [37.5570, 126.9761], [37.5592, 126.9773],
+        [37.5585, 126.9790], [37.5558, 126.9796], [37.5515, 126.9802],
+        [37.5470, 126.9808], [37.5432, 126.9810],
+    ],
+}
+
 ZONES = [
     {"id": "huam", "name": "후암동", "desc": "생활골목, 계단길, 주거지 풍경", "color": "#4ecdc4"},
     {"id": "hoehyeon", "name": "회현동", "desc": "시장·관광 연결축", "color": "#fb923c"},
@@ -227,14 +256,21 @@ def popup_html(asset):
     """
 
 
+def route_path(route):
+    path = ROUTE_PATHS.get(route["id"])
+    if path:
+        return path
+    return [[ASSET_BY_ID[pid]["lat"], ASSET_BY_ID[pid]["lng"]] for pid in route["points"] if pid in ASSET_BY_ID]
+
+
 def make_map(filtered_assets, active_route):
     route = next((item for item in ROUTES if item["id"] == active_route), None)
     center = [37.5505, 126.988]
     zoom = 15
     if route:
-        points = [[ASSET_BY_ID[pid]["lat"], ASSET_BY_ID[pid]["lng"]] for pid in route["points"] if pid in ASSET_BY_ID]
-        if points:
-            center = [sum(p[0] for p in points) / len(points), sum(p[1] for p in points) / len(points)]
+        path = route_path(route)
+        if path:
+            center = [sum(p[0] for p in path) / len(path), sum(p[1] for p in path) / len(path)]
             zoom = 14
 
     fmap = folium.Map(
@@ -262,10 +298,10 @@ def make_map(filtered_assets, active_route):
         ).add_to(fmap)
 
     if route:
-        points = [[ASSET_BY_ID[pid]["lat"], ASSET_BY_ID[pid]["lng"]] for pid in route["points"] if pid in ASSET_BY_ID]
-        if len(points) > 1:
-            folium.PolyLine(points, color=route["color"], weight=4, opacity=0.85, dash_array="10,6").add_to(fmap)
-            fmap.fit_bounds(points, padding=(60, 60))
+        path = route_path(route)
+        if len(path) > 1:
+            folium.PolyLine(path, color=route["color"], weight=4, opacity=0.85, dash_array="10,6").add_to(fmap)
+            fmap.fit_bounds(path, padding=(60, 60))
     return fmap
 
 
