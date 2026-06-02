@@ -124,8 +124,10 @@ def inject_css():
         }
         .legend {padding:16px;}
         .legend h4 {font-size:12px;font-weight:600;margin:0 0 10px;color:var(--accent);}
-        .legend-item {display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:11px;}
-        .legend-dot {width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+        .legend-grid {display:grid;grid-template-columns:repeat(3,1fr);gap:8px;}
+        .legend-item {display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0;font-size:9px;text-align:center;color:var(--text);}
+        .legend-picture {width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800;line-height:1;border:1px solid rgba(15,23,42,.08);}
+        .legend-label {width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
         .stats-bar {display:flex;align-items:center;gap:2px;overflow:hidden;}
         .stat-item {padding:12px 18px;text-align:center;flex:1;}
         .stat-value {font-size:18px;font-weight:700;color:var(--accent);}
@@ -499,9 +501,10 @@ def main():
             )
         with overlay_col3:
             legend = "".join(
-                f'<div class="legend-item"><div class="legend-dot" style="background:{item["color"]}"></div><span>{item["icon"]} {item["label"]}</span></div>'
+                f'<div class="legend-item"><div class="legend-picture" style="background:{item["bg"]};color:{item["color"]}">{item["icon"]}</div><span class="legend-label">{item["label"]}</span></div>'
                 for item in ASSET_TYPES
             )
+            legend = f'<div class="legend-grid">{legend}</div>'
             st.markdown(f'<div class="legend"><h4>자산 유형 범례</h4>{legend}</div>', unsafe_allow_html=True)
 
         fmap = make_map(filtered_assets, st.session_state.active_route)
