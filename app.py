@@ -1,4 +1,7 @@
 import html
+import json
+import urllib.error
+import urllib.request
 
 import folium
 import streamlit as st
@@ -50,35 +53,6 @@ ROUTES = [
     {"id": "r4", "name": "남산 생태길", "color": "#34d399", "icon": "森", "distance": "2.8km", "duration": "1.5시간", "difficulty": "쉬움", "desc": "남산의 숲길과 녹지축을 따라 도시생태를 관찰하고 체험하는 자연 탐방 루트입니다.", "points": [4, 12, 17], "zones": ["남산 정상부", "예장동", "장충동"]},
     {"id": "r5", "name": "남산 공동체길", "color": "#f472b6", "icon": "共", "distance": "2.5km", "duration": "1시간", "difficulty": "쉬움", "desc": "주민 커뮤니티 공간과 마을 활동 거점을 연결하여 세대·문화 간 교류를 촉진하는 루트입니다.", "points": [11, 7, 6], "zones": ["회현동", "후암동"]},
 ]
-
-ROUTE_PATHS = {
-    "r1": [
-        [37.5445, 126.9785], [37.5438, 126.9792], [37.5432, 126.9810],
-        [37.5450, 126.9820], [37.5480, 126.9815], [37.5520, 126.9804],
-        [37.5560, 126.9794], [37.5585, 126.9790], [37.5592, 126.9773],
-    ],
-    "r2": [
-        [37.5512, 126.9882], [37.5505, 126.9870], [37.5514, 126.9888],
-        [37.5535, 126.9903], [37.5560, 126.9913], [37.5580, 126.9920],
-        [37.5588, 126.9935], [37.5590, 126.9942], [37.5586, 126.9965],
-        [37.5580, 126.9992], [37.5575, 127.0015],
-    ],
-    "r3": [
-        [37.5512, 126.9882], [37.5506, 126.9905], [37.5490, 126.9930],
-        [37.5473, 126.9938], [37.5454, 126.9940], [37.5432, 126.9932],
-        [37.5405, 126.9920],
-    ],
-    "r4": [
-        [37.5505, 126.9880], [37.5520, 126.9885], [37.5542, 126.9890],
-        [37.5565, 126.9905], [37.5571, 126.9930], [37.5574, 126.9960],
-        [37.5580, 127.0000],
-    ],
-    "r5": [
-        [37.5555, 126.9755], [37.5570, 126.9761], [37.5592, 126.9773],
-        [37.5585, 126.9790], [37.5558, 126.9796], [37.5515, 126.9802],
-        [37.5470, 126.9808], [37.5432, 126.9810],
-    ],
-}
 
 ZONES = [
     {"id": "huam", "name": "후암동", "desc": "생활골목, 계단길, 주거지 풍경", "color": "#4ecdc4"},
@@ -256,11 +230,33 @@ def popup_html(asset):
     """
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_route_path(route_id, point_ids):
+    waypoints = [ASSET_BY_ID[pid] for pid in point_ids if pid in ASSET_BY_ID]
+    if len(waypoints) < 2:
+        return []
+
+    coords = ";".join(f"{item['lng']},{item['lat']}" for item in waypoints)
+    url = (
+        "https://routing.openstreetmap.de/routed-foot/route/v1/driving/"
+        f"{coords}?overview=full&geometries=geojson&steps=false"
+    )
+    try:
+        with urllib.request.urlopen(url, timeout=8) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+        return []
+
+    if payload.get("code") != "Ok" or not payload.get("routes"):
+        return []
+
+    geometry = payload["routes"][0].get("geometry", {})
+    coordinates = geometry.get("coordinates", [])
+    return [[lat, lng] for lng, lat in coordinates]
+
+
 def route_path(route):
-    path = ROUTE_PATHS.get(route["id"])
-    if path:
-        return path
-    return [[ASSET_BY_ID[pid]["lat"], ASSET_BY_ID[pid]["lng"]] for pid in route["points"] if pid in ASSET_BY_ID]
+    return fetch_route_path(route["id"], tuple(route["points"]))
 
 
 def make_map(filtered_assets, active_route):
