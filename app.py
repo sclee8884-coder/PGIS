@@ -120,12 +120,13 @@ def inject_css():
         .legend, .pgis-panel, .stats-bar {
           background:rgba(255,255,255,.96);border:1px solid var(--border);border-radius:var(--radius);
           box-shadow:0 8px 28px rgba(15,23,42,.10);
+          height:180px;box-sizing:border-box;
         }
         .legend {padding:16px;}
         .legend h4 {font-size:12px;font-weight:600;margin:0 0 10px;color:var(--accent);}
         .legend-item {display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:11px;}
         .legend-dot {width:10px;height:10px;border-radius:50%;flex-shrink:0;}
-        .stats-bar {display:flex;gap:2px;overflow:hidden;}
+        .stats-bar {display:flex;align-items:center;gap:2px;overflow:hidden;}
         .stat-item {padding:12px 18px;text-align:center;flex:1;}
         .stat-value {font-size:18px;font-weight:700;color:var(--accent);}
         .stat-label {font-size:10px;color:var(--text2);margin-top:2px;}
