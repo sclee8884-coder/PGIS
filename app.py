@@ -476,7 +476,7 @@ def main():
 
     map_col, detail_col = st.columns([3.2, 1.05], gap="medium")
     with map_col:
-        overlay_col1, overlay_col2, overlay_col3 = st.columns([1.2, 1.1, 1])
+        overlay_col1, overlay_col2, overlay_col3 = st.columns([1.0, 0.95, 1.35])
         with overlay_col1:
             st.markdown(
                 f"""
