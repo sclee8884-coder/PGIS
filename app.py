@@ -558,19 +558,6 @@ def make_map(filtered_assets, active_route):
     plugins.MiniMap(toggle_display=True, position="bottomleft").add_to(fmap)
 
     for asset in visible_assets:
-        if asset.get("geometry"):
-            folium.GeoJson(
-                asset["geometry"],
-                name=asset["name"],
-                tooltip=asset["name"],
-                popup=folium.Popup(popup_html(asset), max_width=260),
-                style_function=lambda feature, color=TYPE_BY_ID[asset["type"]]["color"]: {
-                    "color": color,
-                    "weight": 3,
-                    "fillColor": color,
-                    "fillOpacity": 0.18,
-                },
-            ).add_to(fmap)
         folium.Marker(
             location=[asset["lat"], asset["lng"]],
             popup=folium.Popup(popup_html(asset), max_width=260),
@@ -817,30 +804,8 @@ def main():
 
     map_col, detail_col = st.columns([3.2, 1.05], gap="medium")
     with map_col:
-        overlay_col1, overlay_col2, overlay_col3 = st.columns([1.0, 0.95, 1.35])
-        with overlay_col1:
-            st.markdown(
-                f"""
-                <div class="pgis-panel">
-                  <h4><span class="dot"></span> PGIS 실시간 참여</h4>
-                  <div style="font-size:11px;color:var(--text2);line-height:1.6">주민·이용자가 직접 남산의 장소 자산을 발굴하고 지도화합니다</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-        with overlay_col2:
-            st.markdown(
-                """
-                <div class="stats-bar">
-                  <div class="stat-item"><div class="stat-value">{asset_count}</div><div class="stat-label">등록 자산</div></div>
-                  <div class="stat-item"><div class="stat-value">5</div><div class="stat-label">보행 루트</div></div>
-                  <div class="stat-item"><div class="stat-value">6</div><div class="stat-label">대상 권역</div></div>
-                  <div class="stat-item"><div class="stat-value">5.2km²</div><div class="stat-label">대상 면적</div></div>
-                </div>
-                """.format(asset_count=len(assets)),
-                unsafe_allow_html=True,
-            )
-        with overlay_col3:
+        _, legend_col = st.columns([2.25, 1.35])
+        with legend_col:
             with st.container(border=True):
                 st.markdown('<div class="legend-title">자산 유형 범례</div>', unsafe_allow_html=True)
                 for row_start in range(0, len(ASSET_TYPES), 3):
