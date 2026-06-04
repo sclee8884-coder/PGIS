@@ -581,13 +581,17 @@ def make_map(filtered_assets, active_route):
     plugins.Fullscreen(position="topright").add_to(fmap)
     plugins.MiniMap(toggle_display=True, position="bottomleft").add_to(fmap)
 
+    marker_cluster = plugins.MarkerCluster(
+        name="자산 클러스터",
+        options={"showCoverageOnHover": False, "spiderfyOnMaxZoom": True},
+    ).add_to(fmap)
     for asset in visible_assets:
         folium.Marker(
             location=[asset["lat"], asset["lng"]],
             popup=folium.Popup(popup_html(asset), max_width=260),
             tooltip=asset["name"],
             icon=folium.DivIcon(html=marker_html(asset), icon_size=(32, 32), icon_anchor=(16, 16)),
-        ).add_to(fmap)
+        ).add_to(marker_cluster)
 
     if route:
         path = route_path(route)
