@@ -86,6 +86,16 @@ def get_database_url():
 
 def normalize_asset_type(value):
     value = (value or "").strip()
+    if "역사" in value or "유산" in value:
+        return "history"
+    if "생활" in value or "시장" in value:
+        return "life"
+    if "문화" in value or "시설" in value:
+        return "culture"
+    if "생태" in value or "자연" in value or "녹지" in value:
+        return "ecology"
+    if "경관" in value or "조망" in value:
+        return "landscape"
     return value if value in TYPE_BY_ID else "community"
 
 
@@ -132,6 +142,57 @@ def id_column_expr(column_name, available_columns):
     return sql.SQL("ROW_NUMBER() OVER ()::text")
 
 
+def first_existing_column(available_columns, candidates):
+    for candidate in candidates:
+        if candidate and candidate in available_columns:
+            return candidate
+    return None
+
+
+def read_table_columns(cur, table_name):
+    schema_name, plain_table_name = pg_table_parts(table_name)
+    if schema_name:
+        cur.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_schema = %s AND table_name = %s
+            """,
+            (schema_name, plain_table_name),
+        )
+    else:
+        cur.execute(
+            """
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = %s
+            """,
+            (plain_table_name,),
+        )
+    return {row[0] for row in cur.fetchall()}
+
+
+def discover_geometry_table(cur, preferred_geom_column):
+    cur.execute(
+        """
+        SELECT f_table_schema, f_table_name, f_geometry_column
+        FROM geometry_columns
+        WHERE f_table_schema NOT IN ('pg_catalog', 'information_schema')
+        ORDER BY
+            CASE WHEN f_geometry_column = %s THEN 0 ELSE 1 END,
+            f_table_schema,
+            f_table_name
+        LIMIT 1
+        """,
+        (preferred_geom_column,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None, None
+    schema_name, table_name, geom_column = row
+    return f"{schema_name}.{table_name}", geom_column
+
+
 @st.cache_data(ttl=300, show_spinner=False)
 def load_postgis_assets(
     database_url,
@@ -150,28 +211,35 @@ def load_postgis_assets(
     assets = []
     with psycopg2.connect(database_url) as conn:
         with conn.cursor() as cur:
-            schema_name, plain_table_name = pg_table_parts(table_name)
-            if schema_name:
-                cur.execute(
-                    """
-                    SELECT column_name
-                    FROM information_schema.columns
-                    WHERE table_schema = %s AND table_name = %s
-                    """,
-                    (schema_name, plain_table_name),
-                )
-            else:
-                cur.execute(
-                    """
-                    SELECT column_name
-                    FROM information_schema.columns
-                    WHERE table_name = %s
-                    """,
-                    (plain_table_name,),
-                )
-            available_columns = {row[0] for row in cur.fetchall()}
+            available_columns = read_table_columns(cur, table_name)
             if geom_column not in available_columns:
-                raise ValueError(f"`{geom_column}` geometry 컬럼을 찾지 못했습니다.")
+                discovered_table, discovered_geom = discover_geometry_table(cur, geom_column)
+                if not discovered_table:
+                    raise ValueError(f"`{geom_column}` geometry 컬럼을 찾지 못했습니다.")
+                table_name = discovered_table
+                geom_column = discovered_geom
+                available_columns = read_table_columns(cur, table_name)
+
+            actual_name_column = first_existing_column(
+                available_columns,
+                [name_column, "문화시설명", "미래유산명", "name", "이름", "명칭"],
+            )
+            actual_type_column = first_existing_column(
+                available_columns,
+                [type_column, "주제분류", "유형 1", "유형", "분야", "category"],
+            )
+            actual_zone_column = first_existing_column(
+                available_columns,
+                [zone_column, "자치구", "지역", "주소", "소재지", "zone"],
+            )
+            actual_desc_column = first_existing_column(
+                available_columns,
+                [desc_column, "설명문", "시설소개", "기타사항", "description", "desc"],
+            )
+            actual_tags_column = first_existing_column(
+                available_columns,
+                [tags_column, "주제분류", "분야", "유형 1", "tags"],
+            )
 
             query = sql.SQL(
                 """
@@ -192,11 +260,11 @@ def load_postgis_assets(
                 table=pg_identifier(table_name),
                 geom_col=pg_identifier(geom_column),
                 id_expr=id_column_expr(id_column, available_columns),
-                name_expr=text_column_expr(name_column, available_columns, "이름 없음"),
-                type_expr=text_column_expr(type_column, available_columns, "community"),
-                zone_expr=text_column_expr(zone_column, available_columns, "미분류"),
-                desc_expr=text_column_expr(desc_column, available_columns, ""),
-                tags_expr=text_column_expr(tags_column, available_columns, ""),
+                name_expr=text_column_expr(actual_name_column, available_columns, "이름 없음"),
+                type_expr=text_column_expr(actual_type_column, available_columns, "community"),
+                zone_expr=text_column_expr(actual_zone_column, available_columns, "미분류"),
+                desc_expr=text_column_expr(actual_desc_column, available_columns, ""),
+                tags_expr=text_column_expr(actual_tags_column, available_columns, ""),
             )
             cur.execute(query)
             for row in cur.fetchall():
