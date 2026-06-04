@@ -501,21 +501,21 @@ def fetch_route_path(route_id, point_ids):
 
     coords = ";".join(f"{item['lng']},{item['lat']}" for item in waypoints)
     url = (
-        "https://routing.openstreetmap.de/routed-foot/route/v1/driving/"
+        "https://routing.openstreetmap.de/routed-foot/route/v1/foot/"
         f"{coords}?overview=full&geometries=geojson&steps=false"
     )
     try:
         with urllib.request.urlopen(url, timeout=8) as response:
             payload = json.loads(response.read().decode("utf-8"))
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
-        return []
+        return [[item["lat"], item["lng"]] for item in waypoints]
 
     if payload.get("code") != "Ok" or not payload.get("routes"):
-        return []
+        return [[item["lat"], item["lng"]] for item in waypoints]
 
     geometry = payload["routes"][0].get("geometry", {})
     coordinates = geometry.get("coordinates", [])
-    return [[lat, lng] for lng, lat in coordinates]
+    return [[lat, lng] for lng, lat in coordinates] or [[item["lat"], item["lng"]] for item in waypoints]
 
 
 def route_path(route):
