@@ -396,6 +396,7 @@ def inject_css():
         }
         .legend-picture {flex:0 0 28px;width:28px;height:28px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;line-height:1;border:1px solid rgba(15,23,42,.08);}
         .legend-label {min-width:0;white-space:nowrap;}
+        .legend-title {font-size:13px;font-weight:700;margin:0 0 12px;color:var(--accent);}
         .stats-bar {display:flex;align-items:center;gap:2px;overflow:hidden;}
         .stat-item {padding:12px 18px;text-align:center;flex:1;}
         .stat-value {font-size:18px;font-weight:700;color:var(--accent);}
@@ -770,7 +771,7 @@ def render_sidebar(filtered_assets):
         selected_labels = st.multiselect(
             "자산 유형 필터",
             ASSET_TYPES,
-            default=[TYPE_BY_ID[item] for item in st.session_state.active_filters],
+            key="asset_filter_selection",
             format_func=lambda item: f"{item['icon']} {item['label']}",
         )
         st.session_state.active_filters = [item["id"] for item in selected_labels]
@@ -794,10 +795,16 @@ def main():
     ASSET_BY_ID = asset_by_id
 
     st.session_state.setdefault("active_filters", [])
+    st.session_state.setdefault("asset_filter_selection", [TYPE_BY_ID[item] for item in st.session_state.active_filters])
     st.session_state.setdefault("active_route", None)
     st.session_state.setdefault("active_tab", "assets")
     st.session_state.setdefault("selected_asset_id", assets[0]["id"])
     st.session_state.setdefault("demo_submissions", [])
+    pending_legend_filter = st.session_state.pop("pending_legend_filter", None)
+    if pending_legend_filter in TYPE_BY_ID:
+        st.session_state.active_filters = [pending_legend_filter]
+        st.session_state.asset_filter_selection = [TYPE_BY_ID[pending_legend_filter]]
+        st.session_state.active_tab = "assets"
     if st.session_state.selected_asset_id not in asset_by_id:
         st.session_state.selected_asset_id = assets[0]["id"]
 
@@ -834,12 +841,17 @@ def main():
                 unsafe_allow_html=True,
             )
         with overlay_col3:
-            legend = "".join(
-                f'<div class="legend-item"><div class="legend-picture" style="background:{item["bg"]};color:{item["color"]}">{item["icon"]}</div><span class="legend-label">{item["label"]}</span></div>'
-                for item in ASSET_TYPES
-            )
-            legend = f'<div class="legend-grid">{legend}</div>'
-            st.markdown(f'<div class="legend"><h4>자산 유형 범례</h4>{legend}</div>', unsafe_allow_html=True)
+            with st.container(border=True):
+                st.markdown('<div class="legend-title">자산 유형 범례</div>', unsafe_allow_html=True)
+                for row_start in range(0, len(ASSET_TYPES), 3):
+                    legend_cols = st.columns(3)
+                    for col, item in zip(legend_cols, ASSET_TYPES[row_start : row_start + 3]):
+                        active = item["id"] in st.session_state.active_filters
+                        label = f"{item['icon']} {item['label']}"
+                        with col:
+                            if st.button(label, key=f"legend_{item['id']}", type="primary" if active else "secondary", use_container_width=True):
+                                st.session_state.pending_legend_filter = item["id"]
+                                st.rerun()
 
         fmap = make_map(filtered_assets, st.session_state.active_route)
         state = st_folium(fmap, height=730, use_container_width=True, returned_objects=["last_object_clicked"])
