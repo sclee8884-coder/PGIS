@@ -1,9 +1,12 @@
 import html
 import json
+import os
 import urllib.error
 import urllib.request
 
 import folium
+import psycopg2
+from psycopg2 import sql
 import streamlit as st
 from folium import plugins
 from streamlit_folium import st_folium
@@ -65,6 +68,189 @@ ZONES = [
 
 TYPE_BY_ID = {item["id"]: item for item in ASSET_TYPES}
 ASSET_BY_ID = {item["id"]: item for item in ASSETS}
+
+
+def get_config_value(key, default=""):
+    value = os.environ.get(key)
+    if value is not None:
+        return value
+    try:
+        return st.secrets.get(key, default)
+    except Exception:
+        return default
+
+
+def get_database_url():
+    return get_config_value("DATABASE_URL", "").strip()
+
+
+def normalize_asset_type(value):
+    value = (value or "").strip()
+    return value if value in TYPE_BY_ID else "community"
+
+
+def normalize_tags(value):
+    if not value:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                return [str(item).strip() for item in parsed if str(item).strip()]
+        except json.JSONDecodeError:
+            pass
+        return [item.strip() for item in value.split(",") if item.strip()]
+    return [str(value).strip()]
+
+
+def pg_identifier(value):
+    parts = [part.strip() for part in str(value).split(".") if part.strip()]
+    return sql.Identifier(*parts)
+
+
+def pg_table_parts(table_name):
+    parts = [part.strip() for part in str(table_name).split(".") if part.strip()]
+    if len(parts) >= 2:
+        return parts[-2], parts[-1]
+    return None, parts[0]
+
+
+def text_column_expr(column_name, available_columns, default):
+    if column_name in available_columns:
+        return sql.SQL("COALESCE({column}::text, {default})").format(
+            column=pg_identifier(column_name),
+            default=sql.Literal(default),
+        )
+    return sql.Literal(default)
+
+
+def id_column_expr(column_name, available_columns):
+    if column_name in available_columns:
+        return sql.SQL("{column}::text").format(column=pg_identifier(column_name))
+    return sql.SQL("ROW_NUMBER() OVER ()::text")
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def load_postgis_assets(
+    database_url,
+    table_name,
+    geom_column,
+    id_column,
+    name_column,
+    type_column,
+    zone_column,
+    desc_column,
+    tags_column,
+):
+    if not database_url:
+        return []
+
+    assets = []
+    with psycopg2.connect(database_url) as conn:
+        with conn.cursor() as cur:
+            schema_name, plain_table_name = pg_table_parts(table_name)
+            if schema_name:
+                cur.execute(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_schema = %s AND table_name = %s
+                    """,
+                    (schema_name, plain_table_name),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = %s
+                    """,
+                    (plain_table_name,),
+                )
+            available_columns = {row[0] for row in cur.fetchall()}
+            if geom_column not in available_columns:
+                raise ValueError(f"`{geom_column}` geometry 컬럼을 찾지 못했습니다.")
+
+            query = sql.SQL(
+                """
+                SELECT
+                    {id_expr} AS id,
+                    {name_expr} AS name,
+                    {type_expr} AS type,
+                    {zone_expr} AS zone,
+                    {desc_expr} AS desc,
+                    {tags_expr} AS tags,
+                    ST_Y(ST_Transform(ST_Centroid({geom_col}), 4326)) AS lat,
+                    ST_X(ST_Transform(ST_Centroid({geom_col}), 4326)) AS lng,
+                    ST_AsGeoJSON(ST_Transform({geom_col}, 4326)) AS geometry
+                FROM {table}
+                WHERE {geom_col} IS NOT NULL
+                """
+            ).format(
+                table=pg_identifier(table_name),
+                geom_col=pg_identifier(geom_column),
+                id_expr=id_column_expr(id_column, available_columns),
+                name_expr=text_column_expr(name_column, available_columns, "이름 없음"),
+                type_expr=text_column_expr(type_column, available_columns, "community"),
+                zone_expr=text_column_expr(zone_column, available_columns, "미분류"),
+                desc_expr=text_column_expr(desc_column, available_columns, ""),
+                tags_expr=text_column_expr(tags_column, available_columns, ""),
+            )
+            cur.execute(query)
+            for row in cur.fetchall():
+                asset_id, name, asset_type, zone, desc, tags, lat, lng, geometry = row
+                if lat is None or lng is None:
+                    continue
+                assets.append(
+                    {
+                        "id": asset_id,
+                        "name": name,
+                        "type": normalize_asset_type(asset_type),
+                        "zone": zone or "미분류",
+                        "desc": desc or "",
+                        "tags": normalize_tags(tags),
+                        "lat": float(lat),
+                        "lng": float(lng),
+                        "geometry": json.loads(geometry) if geometry else None,
+                    }
+                )
+    return assets
+
+
+def load_assets():
+    database_url = get_database_url()
+    if not database_url:
+        return ASSETS, None
+
+    table_name = get_config_value("PGIS_TABLE", "pgis_assets")
+    geom_column = get_config_value("PGIS_GEOM_COLUMN", "geom")
+    id_column = get_config_value("PGIS_ID_COLUMN", "id")
+    name_column = get_config_value("PGIS_NAME_COLUMN", "name")
+    type_column = get_config_value("PGIS_TYPE_COLUMN", "type")
+    zone_column = get_config_value("PGIS_ZONE_COLUMN", "zone")
+    desc_column = get_config_value("PGIS_DESC_COLUMN", "description")
+    tags_column = get_config_value("PGIS_TAGS_COLUMN", "tags")
+
+    try:
+        assets = load_postgis_assets(
+            database_url,
+            table_name,
+            geom_column,
+            id_column,
+            name_column,
+            type_column,
+            zone_column,
+            desc_column,
+            tags_column,
+        )
+    except Exception as exc:
+        return ASSETS, f"PostGIS 데이터를 불러오지 못해 샘플 데이터를 표시합니다: {exc}"
+
+    if not assets:
+        return ASSETS, f"PostGIS 테이블 `{table_name}`에서 표시할 geometry 데이터를 찾지 못해 샘플 데이터를 표시합니다."
+    return assets, None
 
 
 def inject_css():
@@ -286,6 +472,19 @@ def make_map(filtered_assets, active_route):
     plugins.MiniMap(toggle_display=True, position="bottomleft").add_to(fmap)
 
     for asset in filtered_assets:
+        if asset.get("geometry"):
+            folium.GeoJson(
+                asset["geometry"],
+                name=asset["name"],
+                tooltip=asset["name"],
+                popup=folium.Popup(popup_html(asset), max_width=260),
+                style_function=lambda feature, color=TYPE_BY_ID[asset["type"]]["color"]: {
+                    "color": color,
+                    "weight": 3,
+                    "fillColor": color,
+                    "fillOpacity": 0.18,
+                },
+            ).add_to(fmap)
         folium.Marker(
             location=[asset["lat"], asset["lng"]],
             popup=folium.Popup(popup_html(asset), max_width=260),
@@ -301,13 +500,13 @@ def make_map(filtered_assets, active_route):
     return fmap
 
 
-def sync_clicked_asset(map_state):
+def sync_clicked_asset(map_state, assets):
     clicked = map_state.get("last_object_clicked") if map_state else None
     if not clicked:
         return
     lat = round(clicked.get("lat", 0), 4)
     lng = round(clicked.get("lng", 0), 4)
-    for asset in ASSETS:
+    for asset in assets:
         if round(asset["lat"], 4) == lat and round(asset["lng"], 4) == lng:
             st.session_state.selected_asset_id = asset["id"]
             break
@@ -497,17 +696,27 @@ def render_sidebar(filtered_assets):
 
 
 def main():
+    global ASSET_BY_ID
+
     inject_css()
+    assets, data_warning = load_assets()
+    asset_by_id = {item["id"]: item for item in assets}
+    ASSET_BY_ID = asset_by_id
+
     st.session_state.setdefault("active_filters", [])
     st.session_state.setdefault("active_route", None)
     st.session_state.setdefault("active_tab", "assets")
-    st.session_state.setdefault("selected_asset_id", ASSETS[0]["id"])
+    st.session_state.setdefault("selected_asset_id", assets[0]["id"])
     st.session_state.setdefault("demo_submissions", [])
+    if st.session_state.selected_asset_id not in asset_by_id:
+        st.session_state.selected_asset_id = assets[0]["id"]
 
     filtered_assets = (
-        ASSETS if not st.session_state.active_filters else [asset for asset in ASSETS if asset["type"] in st.session_state.active_filters]
+        assets if not st.session_state.active_filters else [asset for asset in assets if asset["type"] in st.session_state.active_filters]
     )
     render_sidebar(filtered_assets)
+    if data_warning:
+        st.warning(data_warning)
 
     map_col, detail_col = st.columns([3.2, 1.05], gap="medium")
     with map_col:
@@ -526,12 +735,12 @@ def main():
             st.markdown(
                 """
                 <div class="stats-bar">
-                  <div class="stat-item"><div class="stat-value">18</div><div class="stat-label">등록 자산</div></div>
+                  <div class="stat-item"><div class="stat-value">{asset_count}</div><div class="stat-label">등록 자산</div></div>
                   <div class="stat-item"><div class="stat-value">5</div><div class="stat-label">보행 루트</div></div>
                   <div class="stat-item"><div class="stat-value">6</div><div class="stat-label">대상 권역</div></div>
                   <div class="stat-item"><div class="stat-value">5.2km²</div><div class="stat-label">대상 면적</div></div>
                 </div>
-                """,
+                """.format(asset_count=len(assets)),
                 unsafe_allow_html=True,
             )
         with overlay_col3:
@@ -544,10 +753,10 @@ def main():
 
         fmap = make_map(filtered_assets, st.session_state.active_route)
         state = st_folium(fmap, height=730, use_container_width=True, returned_objects=["last_object_clicked"])
-        sync_clicked_asset(state)
+        sync_clicked_asset(state, assets)
 
     with detail_col:
-        asset = ASSET_BY_ID.get(st.session_state.selected_asset_id, ASSETS[0])
+        asset = asset_by_id.get(st.session_state.selected_asset_id, assets[0])
         render_detail(asset)
 
 
