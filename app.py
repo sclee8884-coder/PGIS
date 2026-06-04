@@ -68,6 +68,14 @@ ZONES = [
 
 TYPE_BY_ID = {item["id"]: item for item in ASSET_TYPES}
 ASSET_BY_ID = {item["id"]: item for item in ASSETS}
+JUNG_GU_BOUNDS = [[37.5380, 126.9650], [37.5710, 127.0250]]
+JUNG_GU_CENTER = [37.5636, 126.9976]
+
+
+def is_within_jung_gu_bounds(points):
+    min_lat, min_lng = JUNG_GU_BOUNDS[0]
+    max_lat, max_lng = JUNG_GU_BOUNDS[1]
+    return all(min_lat <= lat <= max_lat and min_lng <= lng <= max_lng for lat, lng in points)
 
 
 def get_config_value(key, default=""):
@@ -515,12 +523,16 @@ def route_path(route):
 
 def make_map(filtered_assets, active_route):
     route = next((item for item in ROUTES if item["id"] == active_route), None)
-    center = [37.5505, 126.988]
+    visible_assets = [
+        asset for asset in filtered_assets if is_within_jung_gu_bounds([(asset["lat"], asset["lng"])])
+    ]
+    center = JUNG_GU_CENTER
     zoom = 15
     if route:
         path = route_path(route)
         if path:
-            center = [sum(p[0] for p in path) / len(path), sum(p[1] for p in path) / len(path)]
+            route_center = [sum(p[0] for p in path) / len(path), sum(p[1] for p in path) / len(path)]
+            center = route_center if is_within_jung_gu_bounds([route_center]) else JUNG_GU_CENTER
             zoom = 14
 
     fmap = folium.Map(
@@ -529,6 +541,11 @@ def make_map(filtered_assets, active_route):
         zoom_control=False,
         tiles=None,
         control_scale=True,
+        min_lat=JUNG_GU_BOUNDS[0][0],
+        max_lat=JUNG_GU_BOUNDS[1][0],
+        min_lon=JUNG_GU_BOUNDS[0][1],
+        max_lon=JUNG_GU_BOUNDS[1][1],
+        max_bounds=True,
     )
     folium.TileLayer(
         tiles="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
@@ -539,7 +556,7 @@ def make_map(filtered_assets, active_route):
     plugins.Fullscreen(position="topright").add_to(fmap)
     plugins.MiniMap(toggle_display=True, position="bottomleft").add_to(fmap)
 
-    for asset in filtered_assets:
+    for asset in visible_assets:
         if asset.get("geometry"):
             folium.GeoJson(
                 asset["geometry"],
@@ -564,7 +581,12 @@ def make_map(filtered_assets, active_route):
         path = route_path(route)
         if len(path) > 1:
             folium.PolyLine(path, color=route["color"], weight=4, opacity=0.85, dash_array="10,6").add_to(fmap)
-            fmap.fit_bounds(path, padding=(60, 60))
+            if is_within_jung_gu_bounds(path):
+                fmap.fit_bounds(path, padding=(60, 60))
+            else:
+                fmap.fit_bounds(JUNG_GU_BOUNDS, padding=(20, 20))
+    else:
+        fmap.fit_bounds(JUNG_GU_BOUNDS, padding=(20, 20))
     return fmap
 
 
