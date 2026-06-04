@@ -1,6 +1,7 @@
 import html
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 
@@ -68,6 +69,7 @@ ZONES = [
 
 TYPE_BY_ID = {item["id"]: item for item in ASSET_TYPES}
 ASSET_BY_ID = {item["id"]: item for item in ASSETS}
+ROUTE_ASSET_BY_ID = {item["id"]: item for item in ASSETS}
 JUNG_GU_BOUNDS = [[37.5380, 126.9650], [37.5710, 127.0250]]
 JUNG_GU_CENTER = [37.5636, 126.9976]
 
@@ -435,16 +437,33 @@ def esc(value):
     return html.escape(str(value), quote=True)
 
 
+def clean_display_text(value):
+    text = html.unescape(str(value or ""))
+    text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", text)
+    text = re.sub(r"<[^>]*>", " ", text)
+    text = re.sub(r"(^|\s)[#*_`~]+", " ", text)
+    text = re.sub(r"[#*_`~]+($|\s)", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def truncate_text(value, limit=80):
+    text = clean_display_text(value)
+    return text if len(text) <= limit else f"{text[:limit]}..."
+
+
 def render_asset_card(asset):
     asset_type = TYPE_BY_ID[asset["type"]]
     tags = "".join(f'<span class="card-tag">{esc(tag)}</span>' for tag in asset["tags"])
+    desc = truncate_text(asset["desc"])
     return f"""
     <div class="card">
       <div class="card-header">
         <div class="card-icon asset-{asset['type']}">{asset_type['icon']}</div>
         <div><div class="card-title">{esc(asset['name'])}</div><div class="card-sub">{esc(asset['zone'])}</div></div>
       </div>
-      <div class="card-desc">{esc(asset['desc'][:80])}...</div>
+      <div class="card-desc">{esc(desc)}</div>
       <div class="card-tags">{tags}</div>
     </div>
     """
@@ -479,6 +498,7 @@ def marker_html(asset):
 
 def popup_html(asset):
     asset_type = TYPE_BY_ID[asset["type"]]
+    desc = truncate_text(asset["desc"])
     tags = "".join(
         f"<span style='font-size:10px;padding:2px 8px;border-radius:12px;background:{asset_type['bg']};color:{asset_type['color']}'>{esc(tag)}</span>"
         for tag in asset["tags"]
@@ -487,7 +507,7 @@ def popup_html(asset):
     <div style="min-width:180px">
       <div style="font-size:14px;font-weight:600;margin-bottom:4px">{asset_type['icon']} {esc(asset['name'])}</div>
       <div style="font-size:11px;color:#64748b;margin-bottom:8px">{esc(asset['zone'])}</div>
-      <div style="font-size:12px;line-height:1.6;color:#0f172a">{esc(asset['desc'][:80])}...</div>
+      <div style="font-size:12px;line-height:1.6;color:#0f172a">{esc(desc)}</div>
       <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap">{tags}</div>
     </div>
     """
@@ -495,7 +515,11 @@ def popup_html(asset):
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_route_path(route_id, point_ids):
-    waypoints = [ASSET_BY_ID[pid] for pid in point_ids if pid in ASSET_BY_ID]
+    waypoints = []
+    for pid in point_ids:
+        waypoint = ASSET_BY_ID.get(pid) or ASSET_BY_ID.get(str(pid)) or ROUTE_ASSET_BY_ID.get(pid)
+        if waypoint:
+            waypoints.append(waypoint)
     if len(waypoints) < 2:
         return []
 
@@ -592,6 +616,7 @@ def sync_clicked_asset(map_state, assets):
 
 def render_detail(asset):
     asset_type = TYPE_BY_ID[asset["type"]]
+    desc = clean_display_text(asset["desc"])
     route_matches = [route for route in ROUTES if asset["id"] in route["points"]]
     tags = "".join(f'<span class="card-tag">{esc(tag)}</span>' for tag in asset["tags"])
     routes = "".join(
@@ -607,7 +632,7 @@ def render_detail(asset):
           <h2>{esc(asset['name'])}</h2>
           <div class="type-badge" style="background:{asset_type['bg']};color:{asset_type['color']}">{esc(asset_type['label'])}</div>
           <div style="font-size:12px;color:var(--text2);margin-bottom:16px">위치 {esc(asset['zone'])} · {asset['lat']:.4f}, {asset['lng']:.4f}</div>
-          <p>{esc(asset['desc'])}</p>
+          <p>{esc(desc)}</p>
           <div style="margin:18px 0 8px;color:var(--accent);font-size:14px;font-weight:600">태그</div>
           <div class="card-tags">{tags}</div>
           <div style="margin:18px 0 8px;color:var(--accent);font-size:14px;font-weight:600">연결 루트</div>
