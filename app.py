@@ -3,6 +3,7 @@ import json
 import os
 import re
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 
@@ -93,6 +94,10 @@ def get_config_value(key, default=""):
 
 def get_database_url():
     return get_config_value("DATABASE_URL", "").strip()
+
+
+def get_mapbox_access_token():
+    return (get_config_value("MAPBOX_ACCESS_TOKEN", "") or get_config_value("MAPBOX_TOKEN", "")).strip()
 
 
 def normalize_asset_type(value):
@@ -504,8 +509,8 @@ def load_assets():
         return ASSETS, f"PostGIS 데이터를 불러오지 못해 샘플 데이터를 표시합니다: {exc}"
 
     if not assets:
-        return ASSETS, f"INFO: PostGIS 테이블 `{table_name}`은 준비됐지만 아직 등록된 PGIS 자산이 없어 샘플 데이터를 표시합니다."
-    return assets, None
+        return ASSETS, None
+    return ASSETS + assets, None
 
 
 def merge_session_assets(base_assets):
@@ -708,6 +713,12 @@ def render_route_card(route, active):
     """
 
 
+def format_route_metric(distance_m, duration_s):
+    distance = f"{distance_m / 1000:.1f}km" if distance_m >= 1000 else f"{distance_m:.0f}m"
+    minutes = max(1, round(duration_s / 60))
+    return distance, f"{minutes}분"
+
+
 def marker_html(asset):
     asset_type = TYPE_BY_ID[asset["type"]]
     return f"""
@@ -767,8 +778,55 @@ def route_path(route):
     return fetch_route_path(route["id"], tuple(route["points"]))
 
 
-def make_map(filtered_assets, active_route):
+@st.cache_data(ttl=900, show_spinner=False)
+def fetch_mapbox_vehicle_route(coords, profile, access_token):
+    if len(coords) < 2:
+        return {"path": [], "distance": 0, "duration": 0, "error": None}
+    if not access_token:
+        return {"path": [], "distance": 0, "duration": 0, "error": "MAPBOX_ACCESS_TOKEN이 설정되어 있지 않습니다."}
+    if len(coords) > 25:
+        return {"path": [], "distance": 0, "duration": 0, "error": "Mapbox 차량 경로는 최대 25개 포인트까지 지원합니다."}
+
+    coordinate_text = ";".join(f"{lng:.6f},{lat:.6f}" for lng, lat in coords)
+    query = urllib.parse.urlencode(
+        {
+            "alternatives": "false",
+            "geometries": "geojson",
+            "overview": "full",
+            "steps": "false",
+            "access_token": access_token,
+        }
+    )
+    url = f"https://api.mapbox.com/directions/v5/{profile}/{coordinate_text}?{query}"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        return {"path": [], "distance": 0, "duration": 0, "error": f"Mapbox 경로 요청 실패: {exc}"}
+
+    if payload.get("code") != "Ok" or not payload.get("routes"):
+        message = payload.get("message") or payload.get("code") or "경로를 찾지 못했습니다."
+        return {"path": [], "distance": 0, "duration": 0, "error": f"Mapbox 경로 응답 오류: {message}"}
+
+    route = payload["routes"][0]
+    coordinates = route.get("geometry", {}).get("coordinates", [])
+    return {
+        "path": [[lat, lng] for lng, lat in coordinates],
+        "distance": float(route.get("distance") or 0),
+        "duration": float(route.get("duration") or 0),
+        "error": None,
+    }
+
+
+def vehicle_route_from_assets(route_assets, profile):
+    coords = tuple((float(asset["lng"]), float(asset["lat"])) for asset in route_assets)
+    return fetch_mapbox_vehicle_route(coords, profile, get_mapbox_access_token())
+
+
+def make_map(filtered_assets, active_route, vehicle_route_assets=None, vehicle_route_result=None):
     route = next((item for item in ROUTES if item["id"] == active_route), None)
+    vehicle_route_assets = vehicle_route_assets or []
+    vehicle_path = (vehicle_route_result or {}).get("path", [])
     visible_assets = [
         asset for asset in filtered_assets if is_within_jung_gu_bounds([(asset["lat"], asset["lng"])])
     ]
@@ -780,6 +838,10 @@ def make_map(filtered_assets, active_route):
             route_center = [sum(p[0] for p in path) / len(path), sum(p[1] for p in path) / len(path)]
             center = route_center if is_within_jung_gu_bounds([route_center]) else JUNG_GU_CENTER
             zoom = 14
+    elif vehicle_path:
+        route_center = [sum(p[0] for p in vehicle_path) / len(vehicle_path), sum(p[1] for p in vehicle_path) / len(vehicle_path)]
+        center = route_center if is_within_jung_gu_bounds([route_center]) else JUNG_GU_CENTER
+        zoom = 14
 
     fmap = folium.Map(
         location=center,
@@ -822,6 +884,34 @@ def make_map(filtered_assets, active_route):
                 fmap.fit_bounds(path, padding=(60, 60))
             else:
                 fmap.fit_bounds(JUNG_GU_BOUNDS, padding=(20, 20))
+    if vehicle_path:
+        folium.PolyLine(
+            vehicle_path,
+            color="#111827",
+            weight=5,
+            opacity=0.9,
+            tooltip="Mapbox 차량 도로 경로",
+        ).add_to(fmap)
+        for idx, asset in enumerate(vehicle_route_assets, start=1):
+            folium.Marker(
+                location=[asset["lat"], asset["lng"]],
+                tooltip=f"{idx}. {asset['name']}",
+                icon=folium.DivIcon(
+                    html=f"""
+                    <div style="width:28px;height:28px;border-radius:50%;background:#111827;color:#fff;
+                    border:2px solid #facc15;display:flex;align-items:center;justify-content:center;
+                    font-size:12px;font-weight:800;box-shadow:0 2px 8px rgba(15,23,42,.28)">{idx}</div>
+                    """,
+                    icon_size=(28, 28),
+                    icon_anchor=(14, 14),
+                ),
+            ).add_to(fmap)
+        if is_within_jung_gu_bounds(vehicle_path):
+            fmap.fit_bounds(vehicle_path, padding=(60, 60))
+        else:
+            fmap.fit_bounds(JUNG_GU_BOUNDS, padding=(20, 20))
+    elif route:
+        pass
     else:
         fmap.fit_bounds(JUNG_GU_BOUNDS, padding=(20, 20))
     return fmap
@@ -867,6 +957,10 @@ def render_detail(asset):
         """,
         unsafe_allow_html=True,
     )
+    if st.button("이 포인트를 차량 경로에 추가", key=f"add_detail_to_vehicle_route_{asset['id']}", use_container_width=True):
+        st.session_state.vehicle_route_point_ids.append(asset["id"])
+        st.session_state.pending_active_tab = "routes"
+        st.rerun()
     st.markdown(
         """
         <div class="danger-zone">
@@ -910,6 +1004,66 @@ def render_routes_tab():
         '<div class="about-text">남산 일대의 지역자산을 연계한 5개 주제별 보행 네트워크입니다.</div>',
         unsafe_allow_html=True,
     )
+    st.markdown("#### 차량 도로 경로")
+    st.caption("선택한 포인트 순서대로 Mapbox 차량 경로를 생성합니다.")
+    profile_labels = {
+        "mapbox/driving-traffic": "차량 · 교통 반영",
+        "mapbox/driving": "차량 · 일반 도로",
+    }
+    current_profile = st.session_state.get("vehicle_route_profile", "mapbox/driving-traffic")
+    if current_profile not in profile_labels:
+        current_profile = "mapbox/driving-traffic"
+    selected_profile_label = st.selectbox(
+        "경로 구분",
+        list(profile_labels.values()),
+        index=list(profile_labels).index(current_profile),
+    )
+    st.session_state.vehicle_route_profile = next(key for key, value in profile_labels.items() if value == selected_profile_label)
+
+    available_assets = list(ASSET_BY_ID.values())
+    if available_assets:
+        selected_asset = st.selectbox(
+            "포인트 추가",
+            available_assets,
+            format_func=lambda asset: f"{asset['name']} · {TYPE_BY_ID[asset['type']]['label']}",
+        )
+        if st.button("선택 포인트 추가", key="add_vehicle_route_point", use_container_width=True):
+            st.session_state.vehicle_route_point_ids.append(selected_asset["id"])
+            st.rerun()
+
+    point_ids = st.session_state.vehicle_route_point_ids
+    if point_ids:
+        for idx, point_id in enumerate(point_ids):
+            asset = ASSET_BY_ID.get(point_id) or ASSET_BY_ID.get(str(point_id))
+            if not asset:
+                continue
+            cols = st.columns([0.18, 0.52, 0.15, 0.15])
+            cols[0].markdown(f"**{idx + 1}**")
+            cols[1].caption(asset["name"])
+            if cols[2].button("▲", key=f"vehicle_up_{idx}", disabled=idx == 0):
+                point_ids[idx - 1], point_ids[idx] = point_ids[idx], point_ids[idx - 1]
+                st.rerun()
+            if cols[3].button("삭제", key=f"vehicle_remove_{idx}"):
+                point_ids.pop(idx)
+                st.rerun()
+        if st.button("차량 경로 초기화", key="clear_vehicle_route", use_container_width=True):
+            st.session_state.vehicle_route_point_ids = []
+            st.rerun()
+
+        route_assets = [ASSET_BY_ID[point_id] for point_id in point_ids if point_id in ASSET_BY_ID]
+        if len(route_assets) >= 2:
+            route_result = vehicle_route_from_assets(route_assets, st.session_state.vehicle_route_profile)
+            if route_result.get("error"):
+                st.warning(route_result["error"])
+            else:
+                distance, duration = format_route_metric(route_result["distance"], route_result["duration"])
+                st.success(f"차량 경로 생성됨 · {distance} · {duration}")
+        else:
+            st.info("차량 경로는 포인트 2개 이상부터 생성됩니다.")
+    else:
+        st.info("포인트를 추가하면 지도에 순번과 차량 경로가 표시됩니다.")
+
+    st.markdown("---")
     route_options = ["선택 안 함"] + [route["name"] for route in ROUTES]
     current = next((route["name"] for route in ROUTES if route["id"] == st.session_state.active_route), "선택 안 함")
     selected = st.selectbox("지도에 표시할 루트", route_options, index=route_options.index(current))
@@ -1081,7 +1235,14 @@ def render_sidebar(filtered_assets):
             "PGIS 참여": "pgis",
             "사업소개": "about",
         }
-        label = st.radio("메뉴", list(tabs.keys()), label_visibility="collapsed")
+        pending_active_tab = st.session_state.pop("pending_active_tab", None)
+        if pending_active_tab in tabs.values():
+            st.session_state.active_tab = pending_active_tab
+        tab_labels = list(tabs.keys())
+        active_label = next((name for name, tab_id in tabs.items() if tab_id == st.session_state.active_tab), tab_labels[0])
+        if pending_active_tab in tabs.values():
+            st.session_state.menu_tab = active_label
+        label = st.radio("메뉴", tab_labels, index=tab_labels.index(active_label), label_visibility="collapsed", key="menu_tab")
         st.session_state.active_tab = tabs[label]
         if st.button("PGIS 입력 열기", key="open_pgis_panel", use_container_width=True):
             st.session_state.right_panel_mode = "PGIS 입력"
@@ -1123,6 +1284,8 @@ def main():
     st.session_state.setdefault("active_route", None)
     st.session_state.setdefault("active_tab", "assets")
     st.session_state.setdefault("selected_asset_id", assets[0]["id"])
+    st.session_state.setdefault("vehicle_route_point_ids", [])
+    st.session_state.setdefault("vehicle_route_profile", "mapbox/driving-traffic")
     pending_legend_filter = st.session_state.pop("pending_legend_filter", None)
     if pending_legend_filter in TYPE_BY_ID:
         st.session_state.active_filters = [pending_legend_filter]
@@ -1148,6 +1311,15 @@ def main():
     if st.session_state.pop("delete_flash", False):
         st.success("선택한 자산을 데이터베이스에서 삭제했습니다.")
 
+    vehicle_route_assets = [
+        asset_by_id[point_id]
+        for point_id in st.session_state.vehicle_route_point_ids
+        if point_id in asset_by_id
+    ]
+    vehicle_route_result = None
+    if len(vehicle_route_assets) >= 2:
+        vehicle_route_result = vehicle_route_from_assets(vehicle_route_assets, st.session_state.vehicle_route_profile)
+
     show_pgis_panel = st.session_state.active_tab == "pgis" or st.session_state.get("right_panel_mode") == "PGIS 입력"
     column_ratio = [2.35, 1.45] if show_pgis_panel else [3.2, 1.05]
     map_col, detail_col = st.columns(column_ratio, gap="medium")
@@ -1166,7 +1338,7 @@ def main():
                                 st.session_state.pending_legend_filter = item["id"]
                                 st.rerun()
 
-        fmap = make_map(filtered_assets, st.session_state.active_route)
+        fmap = make_map(filtered_assets, st.session_state.active_route, vehicle_route_assets, vehicle_route_result)
         state = st_folium(fmap, height=730, use_container_width=True, returned_objects=["last_object_clicked"])
         sync_clicked_asset(state, assets)
 
