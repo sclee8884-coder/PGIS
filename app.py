@@ -4,6 +4,7 @@ import os
 import re
 import urllib.error
 import urllib.request
+import uuid
 
 import folium
 import psycopg2
@@ -182,6 +183,29 @@ def read_table_columns(cur, table_name):
     return {row[0] for row in cur.fetchall()}
 
 
+def read_table_column_types(cur, table_name):
+    schema_name, plain_table_name = pg_table_parts(table_name)
+    if schema_name:
+        cur.execute(
+            """
+            SELECT column_name, data_type, udt_name
+            FROM information_schema.columns
+            WHERE table_schema = %s AND table_name = %s
+            """,
+            (schema_name, plain_table_name),
+        )
+    else:
+        cur.execute(
+            """
+            SELECT column_name, data_type, udt_name
+            FROM information_schema.columns
+            WHERE table_name = %s
+            """,
+            (plain_table_name,),
+        )
+    return {row[0]: {"data_type": row[1], "udt_name": row[2]} for row in cur.fetchall()}
+
+
 def discover_geometry_table(cur, preferred_geom_column):
     cur.execute(
         """
@@ -201,6 +225,158 @@ def discover_geometry_table(cur, preferred_geom_column):
         return None, None
     schema_name, table_name, geom_column = row
     return f"{schema_name}.{table_name}", geom_column
+
+
+def ensure_default_pgis_table(cur, table_name, geom_column):
+    cur.execute("CREATE EXTENSION IF NOT EXISTS postgis")
+    cur.execute(
+        sql.SQL(
+            """
+            CREATE TABLE IF NOT EXISTS {table} (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                type TEXT NOT NULL,
+                zone TEXT,
+                description TEXT,
+                tags TEXT,
+                route_ids TEXT,
+                source TEXT,
+                {geom_column} geometry(Point, 4326) NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT now()
+            )
+            """
+        ).format(
+            table=pg_identifier(table_name),
+            geom_column=pg_identifier(geom_column),
+        )
+    )
+    schema_name, plain_table_name = pg_table_parts(table_name)
+    index_prefix = f"{plain_table_name}_{geom_column}".replace(".", "_")
+    cur.execute(
+        sql.SQL("CREATE INDEX IF NOT EXISTS {index_name} ON {table} USING GIST ({geom_column})").format(
+            index_name=pg_identifier(f"{index_prefix}_idx"),
+            table=pg_identifier(table_name),
+            geom_column=pg_identifier(geom_column),
+        )
+    )
+    cur.execute(
+        sql.SQL("CREATE INDEX IF NOT EXISTS {index_name} ON {table} (type)").format(
+            index_name=pg_identifier(f"{plain_table_name}_type_idx"),
+            table=pg_identifier(table_name),
+        )
+    )
+
+
+def can_insert_text_id(column_meta):
+    if not column_meta:
+        return False
+    return column_meta["data_type"] in {"text", "character varying", "character", "uuid"}
+
+
+def save_pgis_asset_to_database(asset, route_ids, source):
+    database_url = get_database_url()
+    if not database_url:
+        raise ValueError("DATABASE_URL이 설정되어 있지 않습니다.")
+
+    table_name = get_config_value("PGIS_TABLE", "pgis_assets")
+    geom_column = get_config_value("PGIS_GEOM_COLUMN", "geom")
+    id_column = get_config_value("PGIS_ID_COLUMN", "id")
+    name_column = get_config_value("PGIS_NAME_COLUMN", "name")
+    type_column = get_config_value("PGIS_TYPE_COLUMN", "type")
+    zone_column = get_config_value("PGIS_ZONE_COLUMN", "zone")
+    desc_column = get_config_value("PGIS_DESC_COLUMN", "description")
+    tags_column = get_config_value("PGIS_TAGS_COLUMN", "tags")
+
+    with psycopg2.connect(database_url) as conn:
+        with conn.cursor() as cur:
+            ensure_default_pgis_table(cur, table_name, geom_column)
+            column_types = read_table_column_types(cur, table_name)
+            available_columns = set(column_types)
+
+            insert_columns = []
+            value_exprs = []
+            values = []
+            saved_asset_id = asset["id"]
+
+            if id_column in available_columns and can_insert_text_id(column_types[id_column]):
+                insert_columns.append(pg_identifier(id_column))
+                value_exprs.append(sql.Placeholder())
+                if column_types[id_column]["data_type"] == "uuid":
+                    saved_asset_id = str(uuid.uuid4())
+                    values.append(saved_asset_id)
+                else:
+                    values.append(asset["id"])
+
+            column_values = [
+                (name_column, asset["name"]),
+                (type_column, asset["type"]),
+                (zone_column, asset["zone"]),
+                (desc_column, asset["desc"]),
+                (tags_column, json.dumps(asset["tags"], ensure_ascii=False)),
+                ("route_ids", json.dumps(route_ids, ensure_ascii=False)),
+                ("source", source),
+            ]
+            for column_name, value in column_values:
+                if column_name in available_columns:
+                    insert_columns.append(pg_identifier(column_name))
+                    value_exprs.append(sql.Placeholder())
+                    values.append(value)
+
+            if geom_column not in available_columns:
+                raise ValueError(f"`{geom_column}` geometry 컬럼을 찾을 수 없습니다.")
+            insert_columns.append(pg_identifier(geom_column))
+            value_exprs.append(sql.SQL("ST_SetSRID(ST_MakePoint(%s, %s), 4326)"))
+            values.extend([asset["lng"], asset["lat"]])
+
+            if not insert_columns:
+                raise ValueError("저장할 수 있는 컬럼을 찾지 못했습니다.")
+
+            query = sql.SQL("INSERT INTO {table} ({columns}) VALUES ({values})").format(
+                table=pg_identifier(table_name),
+                columns=sql.SQL(", ").join(insert_columns),
+                values=sql.SQL(", ").join(value_exprs),
+            )
+            cur.execute(query, values)
+
+    load_postgis_assets.clear()
+    return saved_asset_id
+
+
+def delete_pgis_asset_from_database(asset_id):
+    database_url = get_database_url()
+    if not database_url:
+        raise ValueError("DATABASE_URL이 설정되어 있지 않습니다.")
+
+    table_name = get_config_value("PGIS_TABLE", "pgis_assets")
+    geom_column = get_config_value("PGIS_GEOM_COLUMN", "geom")
+    id_column = get_config_value("PGIS_ID_COLUMN", "id")
+
+    with psycopg2.connect(database_url) as conn:
+        with conn.cursor() as cur:
+            ensure_default_pgis_table(cur, table_name, geom_column)
+            available_columns = read_table_columns(cur, table_name)
+            if id_column not in available_columns:
+                raise ValueError(f"`{id_column}` ID 컬럼을 찾을 수 없습니다.")
+
+            query = sql.SQL("DELETE FROM {table} WHERE {id_column}::text = %s").format(
+                table=pg_identifier(table_name),
+                id_column=pg_identifier(id_column),
+            )
+            cur.execute(query, (str(asset_id),))
+            deleted_count = cur.rowcount
+
+    load_postgis_assets.clear()
+    if deleted_count == 0:
+        raise ValueError("해당 ID의 데이터가 DB에 없습니다. 샘플 데이터는 삭제할 수 없습니다.")
+    return deleted_count
+
+
+def ensure_pgis_database_schema(database_url, table_name, geom_column):
+    if not database_url:
+        return
+    with psycopg2.connect(database_url) as conn:
+        with conn.cursor() as cur:
+            ensure_default_pgis_table(cur, table_name, geom_column)
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -312,6 +488,7 @@ def load_assets():
     tags_column = get_config_value("PGIS_TAGS_COLUMN", "tags")
 
     try:
+        ensure_pgis_database_schema(database_url, table_name, geom_column)
         assets = load_postgis_assets(
             database_url,
             table_name,
@@ -445,6 +622,11 @@ def inject_css():
           padding:10px 12px;border-radius:8px;background:#ecfeff;border:1px solid #bae6fd;
           color:#155e75;font-size:11px;line-height:1.6;margin:12px 0;
         }
+        .danger-zone {
+          margin-top:18px;padding:12px;border-radius:10px;background:#fff7ed;
+          border:1px solid #fed7aa;color:#9a3412;font-size:12px;line-height:1.6;
+        }
+        .danger-title {font-size:13px;font-weight:800;color:#c2410c;margin-bottom:4px;}
         .pgis-mini-grid {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:10px 0 4px;}
         .pgis-mini-type {border:1px solid var(--border);border-radius:8px;padding:8px 6px;background:#fff;text-align:center;font-size:10px;color:var(--text2);}
         .pgis-mini-type strong {display:block;font-size:15px;color:var(--accent);line-height:1;margin-bottom:4px;}
@@ -685,6 +867,25 @@ def render_detail(asset):
         """,
         unsafe_allow_html=True,
     )
+    st.markdown(
+        """
+        <div class="danger-zone">
+          <div class="danger-title">데이터 삭제</div>
+          선택한 자산을 데이터베이스에서 삭제합니다. 삭제 후 지도와 목록에서 사라집니다.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    confirm_delete = st.checkbox("이 자산을 삭제하겠습니다.", key=f"confirm_delete_{asset['id']}")
+    if st.button("선택 자산 삭제", key=f"delete_asset_{asset['id']}", disabled=not confirm_delete, use_container_width=True):
+        try:
+            delete_pgis_asset_from_database(asset["id"])
+        except Exception as exc:
+            st.error(f"삭제에 실패했습니다: {exc}")
+        else:
+            st.session_state.selected_asset_id = None
+            st.session_state.delete_flash = True
+            st.rerun()
 
 
 def render_assets_tab(filtered_assets):
@@ -771,27 +972,31 @@ def render_pgis_tab():
         submitted = st.form_submit_button("지도에 등록하기", type="primary", use_container_width=True)
         if submitted:
             if name.strip():
-                asset_id = next_demo_asset_id()
+                asset_id = f"pgis-{uuid.uuid4().hex[:12]}"
                 submitted_tags = [tag.strip() for tag in tags.split(",") if tag.strip()]
                 if contributor.strip():
                     submitted_tags.append(contributor.strip())
-                st.session_state.demo_submissions.append(
-                    {
-                        "id": asset_id,
-                        "name": name.strip(),
-                        "type": asset_type["id"],
-                        "lat": float(lat),
-                        "lng": float(lng),
-                        "zone": zone["name"],
-                        "desc": desc.strip() or "아직 설명이 입력되지 않았습니다.",
-                        "tags": submitted_tags,
-                        "route_ids": [route["id"] for route in route_selection],
-                    }
-                )
-                st.session_state.selected_asset_id = asset_id
-                st.session_state.pending_clear_filters = True
-                st.session_state.pgis_flash = True
-                st.rerun()
+                route_ids = [route["id"] for route in route_selection]
+                asset = {
+                    "id": asset_id,
+                    "name": name.strip(),
+                    "type": asset_type["id"],
+                    "lat": float(lat),
+                    "lng": float(lng),
+                    "zone": zone["name"],
+                    "desc": desc.strip() or "아직 설명이 입력되지 않았습니다.",
+                    "tags": submitted_tags,
+                    "route_ids": route_ids,
+                }
+                try:
+                    saved_asset_id = save_pgis_asset_to_database(asset, route_ids, contributor.strip())
+                except Exception as exc:
+                    st.error(f"데이터베이스 저장에 실패했습니다: {exc}")
+                else:
+                    st.session_state.selected_asset_id = saved_asset_id
+                    st.session_state.pending_clear_filters = True
+                    st.session_state.pgis_flash = True
+                    st.rerun()
             else:
                 st.warning("자산명을 입력해주세요.")
 
@@ -878,6 +1083,9 @@ def render_sidebar(filtered_assets):
         }
         label = st.radio("메뉴", list(tabs.keys()), label_visibility="collapsed")
         st.session_state.active_tab = tabs[label]
+        if st.button("PGIS 입력 열기", key="open_pgis_panel", use_container_width=True):
+            st.session_state.right_panel_mode = "PGIS 입력"
+            st.rerun()
 
         selected_labels = st.multiselect(
             "자산 유형 필터",
@@ -923,6 +1131,8 @@ def main():
     if st.session_state.pop("pending_clear_filters", False):
         st.session_state.active_filters = []
         st.session_state.asset_filter_selection = []
+    if st.session_state.selected_asset_id is None:
+        st.session_state.selected_asset_id = assets[0]["id"]
     if st.session_state.selected_asset_id not in asset_by_id:
         st.session_state.selected_asset_id = assets[0]["id"]
 
@@ -932,8 +1142,11 @@ def main():
     render_sidebar(filtered_assets)
     if data_warning:
         st.warning(data_warning)
+    if st.session_state.pop("delete_flash", False):
+        st.success("선택한 자산을 데이터베이스에서 삭제했습니다.")
 
-    column_ratio = [2.35, 1.45] if st.session_state.active_tab == "pgis" else [3.2, 1.05]
+    show_pgis_panel = st.session_state.active_tab == "pgis" or st.session_state.get("right_panel_mode") == "PGIS 입력"
+    column_ratio = [2.35, 1.45] if show_pgis_panel else [3.2, 1.05]
     map_col, detail_col = st.columns(column_ratio, gap="medium")
     with map_col:
         _, legend_col = st.columns([2.25, 1.35])
@@ -956,10 +1169,21 @@ def main():
 
     with detail_col:
         if st.session_state.active_tab == "pgis":
+            st.markdown('<div class="type-badge" style="background:rgba(15,118,110,.10);color:var(--accent)">PGIS 입력 모드</div>', unsafe_allow_html=True)
             render_pgis_tab()
         else:
-            asset = asset_by_id.get(st.session_state.selected_asset_id, assets[0])
-            render_detail(asset)
+            panel_mode = st.radio(
+                "오른쪽 패널",
+                ["상세 정보", "PGIS 입력"],
+                horizontal=True,
+                label_visibility="collapsed",
+                key="right_panel_mode",
+            )
+            if panel_mode == "PGIS 입력":
+                render_pgis_tab()
+            else:
+                asset = asset_by_id.get(st.session_state.selected_asset_id, assets[0])
+                render_detail(asset)
 
 
 if __name__ == "__main__":
