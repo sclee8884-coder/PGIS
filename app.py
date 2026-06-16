@@ -420,6 +420,37 @@ def inject_css():
         .detail-box {background:var(--bg2);border:1px solid var(--border);border-radius:12px;padding:20px;height:100%;}
         .detail-box h2 {font-size:20px;font-weight:700;margin:0 0 8px;}
         .detail-box p {font-size:13px;color:var(--text2);line-height:1.8;}
+        .pgis-form-shell {
+          background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%);
+          border:1px solid var(--border);border-radius:12px;padding:18px;
+          box-shadow:0 10px 28px rgba(15,23,42,.08);
+        }
+        .pgis-form-hero {
+          border-radius:10px;padding:16px;margin-bottom:14px;
+          background:linear-gradient(135deg,rgba(15,118,110,.10),rgba(244,114,182,.12));
+          border:1px solid rgba(15,118,110,.16);
+        }
+        .pgis-form-kicker {font-size:11px;font-weight:700;color:var(--accent);margin-bottom:6px;}
+        .pgis-form-title {font-size:20px;font-weight:800;color:var(--text);line-height:1.25;margin-bottom:6px;}
+        .pgis-form-copy {font-size:12px;line-height:1.6;color:var(--text2);}
+        .pgis-section {
+          display:flex;align-items:center;gap:8px;margin:16px 0 8px;
+          color:var(--accent);font-size:13px;font-weight:800;
+        }
+        .pgis-section span {
+          width:22px;height:22px;border-radius:7px;background:rgba(15,118,110,.10);
+          display:flex;align-items:center;justify-content:center;font-size:11px;
+        }
+        .pgis-note {
+          padding:10px 12px;border-radius:8px;background:#ecfeff;border:1px solid #bae6fd;
+          color:#155e75;font-size:11px;line-height:1.6;margin:12px 0;
+        }
+        .pgis-mini-grid {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:10px 0 4px;}
+        .pgis-mini-type {border:1px solid var(--border);border-radius:8px;padding:8px 6px;background:#fff;text-align:center;font-size:10px;color:var(--text2);}
+        .pgis-mini-type strong {display:block;font-size:15px;color:var(--accent);line-height:1;margin-bottom:4px;}
+        div[data-testid="stForm"] {
+          border:0;padding:0;background:transparent;
+        }
         .about-text {font-size:12px;color:var(--text2);line-height:1.8;margin-bottom:16px;}
         .info-grid {display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;}
         .info-box {background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:12px;text-align:center;}
@@ -691,24 +722,39 @@ def render_routes_tab():
 
 def render_pgis_tab():
     st.markdown(
-        '<div class="about-text">PGIS(주민참여형 GIS)를 통해 남산의 숨겨진 장소를 직접 등록하고, 지역 자산 지도를 함께 만들어갑니다.</div>',
+        """
+        <div class="pgis-form-shell">
+          <div class="pgis-form-hero">
+            <div class="pgis-form-kicker">PGIS DATA ENTRY</div>
+            <div class="pgis-form-title">장소 정보를 지도 자산으로 등록</div>
+            <div class="pgis-form-copy">스크린샷의 상세 카드에 들어갈 이름, 유형, 위치, 설명, 태그와 연결 루트를 한 번에 입력합니다.</div>
+          </div>
+          <div class="pgis-mini-grid">
+            <div class="pgis-mini-type"><strong>文</strong>유형</div>
+            <div class="pgis-mini-type"><strong>37</strong>좌표</div>
+            <div class="pgis-mini-type"><strong>#</strong>태그</div>
+          </div>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
     if st.session_state.pop("pgis_flash", False):
         st.success("장소가 등록되었습니다. 지도와 상세 카드에서 바로 확인할 수 있습니다.")
 
     with st.form("pgis_form", clear_on_submit=True):
-        st.subheader("상세 카드 데이터 입력")
+        st.markdown('<div class="pgis-section"><span>1</span>기본 정보</div>', unsafe_allow_html=True)
         name = st.text_input("자산명 *", placeholder="예: 국립극장")
         asset_type = st.selectbox("자산 유형 *", ASSET_TYPES, index=2, format_func=lambda item: f"{item['icon']} {item['label']}")
         zone = st.selectbox("위치/권역 *", ZONES, format_func=lambda item: item["name"])
 
+        st.markdown('<div class="pgis-section"><span>2</span>지도 위치</div>', unsafe_allow_html=True)
         coord_cols = st.columns(2)
         with coord_cols[0]:
             lat = st.number_input("위도 *", min_value=37.5380, max_value=37.5710, value=37.5530, step=0.0001, format="%.4f")
         with coord_cols[1]:
             lng = st.number_input("경도 *", min_value=126.9650, max_value=127.0250, value=127.0045, step=0.0001, format="%.4f")
 
+        st.markdown('<div class="pgis-section"><span>3</span>설명과 연결</div>', unsafe_allow_html=True)
         desc = st.text_area(
             "설명 본문",
             height=180,
@@ -718,7 +764,10 @@ def render_pgis_tab():
         route_selection = st.multiselect("연결 루트", ROUTES, format_func=lambda route: route["name"])
         contributor = st.text_input("제보자/출처", placeholder="예: 주민 워크숍, 현장조사, 문헌자료")
 
-        st.caption("입력한 데이터는 현재 세션의 데모 자산으로 저장되며, PostGIS 연결 전 화면 구성과 필드 검증에 사용할 수 있습니다.")
+        st.markdown(
+            '<div class="pgis-note">현재 세션의 데모 자산으로 저장됩니다. PostGIS 연결 전 화면 구성과 필드 검증에 바로 사용할 수 있습니다.</div>',
+            unsafe_allow_html=True,
+        )
         submitted = st.form_submit_button("지도에 등록하기", type="primary", use_container_width=True)
         if submitted:
             if name.strip():
@@ -843,7 +892,10 @@ def render_sidebar(filtered_assets):
         elif st.session_state.active_tab == "routes":
             render_routes_tab()
         elif st.session_state.active_tab == "pgis":
-            render_pgis_tab()
+            st.markdown(
+                '<div class="about-text">오른쪽 패널에서 PGIS 장소 데이터를 입력하고 지도에 바로 반영합니다.</div>',
+                unsafe_allow_html=True,
+            )
         elif st.session_state.active_tab == "about":
             render_about_tab()
 
@@ -881,7 +933,8 @@ def main():
     if data_warning:
         st.warning(data_warning)
 
-    map_col, detail_col = st.columns([3.2, 1.05], gap="medium")
+    column_ratio = [2.35, 1.45] if st.session_state.active_tab == "pgis" else [3.2, 1.05]
+    map_col, detail_col = st.columns(column_ratio, gap="medium")
     with map_col:
         _, legend_col = st.columns([2.25, 1.35])
         with legend_col:
@@ -902,8 +955,11 @@ def main():
         sync_clicked_asset(state, assets)
 
     with detail_col:
-        asset = asset_by_id.get(st.session_state.selected_asset_id, assets[0])
-        render_detail(asset)
+        if st.session_state.active_tab == "pgis":
+            render_pgis_tab()
+        else:
+            asset = asset_by_id.get(st.session_state.selected_asset_id, assets[0])
+            render_detail(asset)
 
 
 if __name__ == "__main__":
