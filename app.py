@@ -504,7 +504,7 @@ def load_assets():
         return ASSETS, f"PostGIS 데이터를 불러오지 못해 샘플 데이터를 표시합니다: {exc}"
 
     if not assets:
-        return ASSETS, f"PostGIS 테이블 `{table_name}`에서 표시할 geometry 데이터를 찾지 못해 샘플 데이터를 표시합니다."
+        return ASSETS, f"INFO: PostGIS 테이블 `{table_name}`은 준비됐지만 아직 등록된 PGIS 자산이 없어 샘플 데이터를 표시합니다."
     return assets, None
 
 
@@ -1141,7 +1141,10 @@ def main():
     )
     render_sidebar(filtered_assets)
     if data_warning:
-        st.warning(data_warning)
+        if data_warning.startswith("INFO: "):
+            st.info(data_warning.replace("INFO: ", "", 1))
+        else:
+            st.warning(data_warning)
     if st.session_state.pop("delete_flash", False):
         st.success("선택한 자산을 데이터베이스에서 삭제했습니다.")
 
