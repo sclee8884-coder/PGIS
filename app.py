@@ -331,6 +331,14 @@ def load_assets():
     return assets, None
 
 
+def merge_session_assets(base_assets):
+    return base_assets + st.session_state.get("demo_submissions", [])
+
+
+def next_demo_asset_id():
+    return f"pgis-{len(st.session_state.get('demo_submissions', [])) + 1}"
+
+
 def inject_css():
     st.markdown(
         """
@@ -621,7 +629,8 @@ def sync_clicked_asset(map_state, assets):
 def render_detail(asset):
     asset_type = TYPE_BY_ID[asset["type"]]
     desc = clean_display_text(asset["desc"])
-    route_matches = [route for route in ROUTES if asset["id"] in route["points"]]
+    route_ids = set(asset.get("route_ids", []))
+    route_matches = [route for route in ROUTES if asset["id"] in route["points"] or route["id"] in route_ids]
     tags = "".join(f'<span class="card-tag">{esc(tag)}</span>' for tag in asset["tags"])
     routes = "".join(
         f"""<div style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:12px">
@@ -685,28 +694,65 @@ def render_pgis_tab():
         '<div class="about-text">PGIS(주민참여형 GIS)를 통해 남산의 숨겨진 장소를 직접 등록하고, 지역 자산 지도를 함께 만들어갑니다.</div>',
         unsafe_allow_html=True,
     )
+    if st.session_state.pop("pgis_flash", False):
+        st.success("장소가 등록되었습니다. 지도와 상세 카드에서 바로 확인할 수 있습니다.")
+
     with st.form("pgis_form", clear_on_submit=True):
-        st.subheader("새 장소 등록")
-        name = st.text_input("장소 이름 *", placeholder="예: 후암동 옛 우물터")
-        asset_type = st.selectbox("자산 유형 *", ASSET_TYPES, format_func=lambda item: f"{item['icon']} {item['label']}")
-        zone = st.selectbox("권역 *", ZONES, format_func=lambda item: item["name"])
-        desc = st.text_area("장소 설명", placeholder="이 장소에 대한 이야기, 기억, 특징을 적어주세요...")
-        tags = st.text_input("태그 (쉼표로 구분)", placeholder="예: 골목길, 추억, 숨은명소")
-        submitted = st.form_submit_button("등록하기", type="primary", use_container_width=True)
+        st.subheader("상세 카드 데이터 입력")
+        name = st.text_input("자산명 *", placeholder="예: 국립극장")
+        asset_type = st.selectbox("자산 유형 *", ASSET_TYPES, index=2, format_func=lambda item: f"{item['icon']} {item['label']}")
+        zone = st.selectbox("위치/권역 *", ZONES, format_func=lambda item: item["name"])
+
+        coord_cols = st.columns(2)
+        with coord_cols[0]:
+            lat = st.number_input("위도 *", min_value=37.5380, max_value=37.5710, value=37.5530, step=0.0001, format="%.4f")
+        with coord_cols[1]:
+            lng = st.number_input("경도 *", min_value=126.9650, max_value=127.0250, value=127.0045, step=0.0001, format="%.4f")
+
+        desc = st.text_area(
+            "설명 본문",
+            height=180,
+            placeholder="설립 시기, 장소의 의미, 규모, 현재 활용, 주민 기억 등을 입력하세요.",
+        )
+        tags = st.text_input("태그", placeholder="예: 공연장, 공연예술, 국립문화시설")
+        route_selection = st.multiselect("연결 루트", ROUTES, format_func=lambda route: route["name"])
+        contributor = st.text_input("제보자/출처", placeholder="예: 주민 워크숍, 현장조사, 문헌자료")
+
+        st.caption("입력한 데이터는 현재 세션의 데모 자산으로 저장되며, PostGIS 연결 전 화면 구성과 필드 검증에 사용할 수 있습니다.")
+        submitted = st.form_submit_button("지도에 등록하기", type="primary", use_container_width=True)
         if submitted:
             if name.strip():
-                st.success("장소가 등록되었습니다! (데모)")
+                asset_id = next_demo_asset_id()
+                submitted_tags = [tag.strip() for tag in tags.split(",") if tag.strip()]
+                if contributor.strip():
+                    submitted_tags.append(contributor.strip())
                 st.session_state.demo_submissions.append(
                     {
+                        "id": asset_id,
                         "name": name.strip(),
                         "type": asset_type["id"],
+                        "lat": float(lat),
+                        "lng": float(lng),
                         "zone": zone["name"],
-                        "desc": desc.strip(),
-                        "tags": [tag.strip() for tag in tags.split(",") if tag.strip()],
+                        "desc": desc.strip() or "아직 설명이 입력되지 않았습니다.",
+                        "tags": submitted_tags,
+                        "route_ids": [route["id"] for route in route_selection],
                     }
                 )
+                st.session_state.selected_asset_id = asset_id
+                st.session_state.pending_clear_filters = True
+                st.session_state.pgis_flash = True
+                st.rerun()
             else:
-                st.warning("장소 이름을 입력해주세요.")
+                st.warning("자산명을 입력해주세요.")
+
+    if st.session_state.demo_submissions:
+        st.markdown("#### 방금 등록한 데이터")
+        for asset in reversed(st.session_state.demo_submissions[-3:]):
+            st.markdown(render_asset_card(asset), unsafe_allow_html=True)
+            if st.button("상세 카드로 보기", key=f"pgis_preview_{asset['id']}", use_container_width=True):
+                st.session_state.selected_asset_id = asset["id"]
+                st.rerun()
 
     st.markdown("#### 참여 방법 안내")
     for item in [
@@ -806,7 +852,9 @@ def main():
     global ASSET_BY_ID
 
     inject_css()
+    st.session_state.setdefault("demo_submissions", [])
     assets, data_warning = load_assets()
+    assets = merge_session_assets(assets)
     asset_by_id = {item["id"]: item for item in assets}
     ASSET_BY_ID = asset_by_id
 
@@ -815,12 +863,14 @@ def main():
     st.session_state.setdefault("active_route", None)
     st.session_state.setdefault("active_tab", "assets")
     st.session_state.setdefault("selected_asset_id", assets[0]["id"])
-    st.session_state.setdefault("demo_submissions", [])
     pending_legend_filter = st.session_state.pop("pending_legend_filter", None)
     if pending_legend_filter in TYPE_BY_ID:
         st.session_state.active_filters = [pending_legend_filter]
         st.session_state.asset_filter_selection = [TYPE_BY_ID[pending_legend_filter]]
         st.session_state.active_tab = "assets"
+    if st.session_state.pop("pending_clear_filters", False):
+        st.session_state.active_filters = []
+        st.session_state.asset_filter_selection = []
     if st.session_state.selected_asset_id not in asset_by_id:
         st.session_state.selected_asset_id = assets[0]["id"]
 
